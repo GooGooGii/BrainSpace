@@ -53,9 +53,25 @@ const result = await evaluate(`new Promise(resolve => {
     }, 500);
   }, 120);
 })`);
+const tipping = await evaluate(`new Promise(resolve => {
+  window.__gameDebug.loadLevel(0);
+  setTimeout(() => {
+    const canvas = document.querySelector('canvas');
+    const rect = canvas.getBoundingClientRect();
+    const fire = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 11, pointerType: 'touch', clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }));
+    const point = (x, y) => [rect.left + rect.width * x, rect.top + rect.height * y];
+    fire('pointerdown', ...point(.22, .66));
+    fire('pointermove', ...point(.37, .84));
+    fire('pointermove', ...point(.68, .72));
+    fire('pointerup', ...point(.68, .72));
+    const started = window.__gameDebug.getState();
+    setTimeout(() => resolve({ started, settled: window.__gameDebug.getState() }), 1900);
+  }, 120);
+})`);
 socket.close();
 chrome.kill();
-console.log(JSON.stringify(result));
+console.log(JSON.stringify({ ...result, tipping }));
 const modes = new Set(result.started.gears.map(gear => gear.mode));
 const movingGearChanged = result.later.gears.some((gear, index) => ["constant", "variable"].includes(gear.mode) && gear.angle !== result.started.gears[index].angle);
-if (result.ready !== "true" || result.levelCards !== 8 || result.initiallyUnlocked !== 1 || result.strokes !== "1 / 3" || !result.canvas || result.started.level !== 8 || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 3 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame) process.exitCode = 1;
+const tippedFromOffCenterContact = Math.abs(tipping.settled.firstStrokeAngle - tipping.started.firstStrokeAngle) > 0.04;
+if (result.ready !== "true" || result.levelCards !== 8 || result.initiallyUnlocked !== 1 || result.strokes !== "1 / 3" || !result.canvas || result.started.level !== 8 || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 3 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame || !tippedFromOffCenterContact || tipping.started.firstStrokeMass <= 0 || tipping.started.firstStrokeInertia <= 0) process.exitCode = 1;

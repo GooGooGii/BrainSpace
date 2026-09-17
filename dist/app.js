@@ -21,7 +21,9 @@ const hintBody = document.querySelector("#hintBody");
 
 const WORLD = { left: -5, right: 5, bottom: -7, top: 7 };
 const BALL_RADIUS = 0.28;
+const BALL_MASS = 0.55;
 const LINE_RADIUS = 0.075;
+const LINE_DENSITY = 0.85;
 let maxStrokes = 3;
 const GRAVITY = 5.5;
 
@@ -294,7 +296,31 @@ function moveStroke(event) {
 }
 
 function makeStrokeBody(stroke) {
-  const center = stroke.points.reduce((sum, point) => sum.add(point), new THREE.Vector2()).multiplyScalar(1 / stroke.points.length);
+  let totalLength = 0;
+  const weightedCenter = new THREE.Vector2();
+  const segments = [];
+  for (let i = 1; i < stroke.points.length; i++) {
+    const a = stroke.points[i - 1];
+    const b = stroke.points[i];
+    const length = a.distanceTo(b);
+    if (length < 0.0001) continue;
+    const midpoint = a.clone().add(b).multiplyScalar(0.5);
+    segments.push({ length, midpoint });
+    weightedCenter.addScaledVector(midpoint, length);
+    totalLength += length;
+  }
+  const center = totalLength > 0
+    ? weightedCenter.multiplyScalar(1 / totalLength)
+    : stroke.points[0].clone();
+  const rawMass = Math.max(0.001, totalLength * LINE_DENSITY);
+  const mass = Math.max(0.35, rawMass);
+  const massScale = mass / rawMass;
+  let inertia = 0;
+  for (const segment of segments) {
+    const segmentMass = segment.length * LINE_DENSITY * massScale;
+    const offsetSq = segment.midpoint.distanceToSquared(center);
+    inertia += segmentMass * (offsetSq + segment.length * segment.length / 12 + LINE_RADIUS * LINE_RADIUS / 2);
+  }
   const group = new THREE.Group();
   group.position.set(center.x, center.y, 0);
   drawingRoot.add(group);
@@ -305,7 +331,8 @@ function makeStrokeBody(stroke) {
     localPoints: stroke.points.map(point => point.clone().sub(center)),
     velocity: new THREE.Vector2(),
     angularVelocity: 0,
-    mass: Math.max(0.8, stroke.points.length * 0.035)
+    mass,
+    inertia: Math.max(0.02, inertia)
   };
 }
 
@@ -397,16 +424,39 @@ function strokeWorldPoints(body) {
   ));
 }
 
-function bounceBody(body, normal, contact, strength = 0.35) {
-  const into = body.velocity.dot(normal);
-  if (into < 0) {
-    const impulse = -(1 + strength) * into;
-    body.velocity.addScaledVector(normal, impulse);
-    const arm = contact.clone().sub(new THREE.Vector2(body.group.position.x, body.group.position.y));
-    body.angularVelocity += (arm.x * normal.y - arm.y * normal.x) * impulse * 0.025 / body.mass;
+function cross2(a, b) {
+  return a.x * b.y - a.y * b.x;
+}
+
+function bodyPointVelocity(body, contact) {
+  const arm = contact.clone().sub(new THREE.Vector2(body.group.position.x, body.group.position.y));
+  return body.velocity.clone().add(new THREE.Vector2(-body.angularVelocity * arm.y, body.angularVelocity * arm.x));
+}
+
+function resolveBodyContact(body, normal, contact, surfaceVelocity = new THREE.Vector2(), restitution = 0.16, friction = 0.42) {
+  const arm = contact.clone().sub(new THREE.Vector2(body.group.position.x, body.group.position.y));
+  let relative = bodyPointVelocity(body, contact).sub(surfaceVelocity);
+  const normalSpeed = relative.dot(normal);
+  if (normalSpeed >= 0) return 0;
+
+  const armCrossNormal = cross2(arm, normal);
+  const denominator = 1 / body.mass + armCrossNormal * armCrossNormal / body.inertia;
+  const normalImpulse = -(1 + restitution) * normalSpeed / denominator;
+  body.velocity.addScaledVector(normal, normalImpulse / body.mass);
+  body.angularVelocity += armCrossNormal * normalImpulse / body.inertia;
+
+  relative = bodyPointVelocity(body, contact).sub(surfaceVelocity);
+  const tangent = relative.clone().addScaledVector(normal, -relative.dot(normal));
+  if (tangent.lengthSq() > 0.000001) {
+    tangent.normalize();
+    const armCrossTangent = cross2(arm, tangent);
+    const tangentDenominator = 1 / body.mass + armCrossTangent * armCrossTangent / body.inertia;
+    const idealFrictionImpulse = -relative.dot(tangent) / tangentDenominator;
+    const frictionImpulse = THREE.MathUtils.clamp(idealFrictionImpulse, -friction * normalImpulse, friction * normalImpulse);
+    body.velocity.addScaledVector(tangent, frictionImpulse / body.mass);
+    body.angularVelocity += armCrossTangent * frictionImpulse / body.inertia;
   }
-  body.velocity.multiplyScalar(0.985);
-  body.angularVelocity *= 0.985;
+  return normalImpulse;
 }
 
 function gearSurfaceVelocity(gear, point) {
@@ -435,57 +485,65 @@ function updateGears(dt) {
 }
 
 function collideStrokeWithWorld(body) {
-  let points = strokeWorldPoints(body);
   const bounds = visibleBounds();
-  let shiftX = 0;
-  let shiftY = 0;
-  for (const point of points) {
-    if (point.x - LINE_RADIUS < bounds.left) shiftX = Math.max(shiftX, bounds.left + LINE_RADIUS - point.x);
-    if (point.x + LINE_RADIUS > bounds.right) shiftX = Math.min(shiftX, bounds.right - LINE_RADIUS - point.x);
-    if (point.y - LINE_RADIUS < bounds.bottom) shiftY = Math.max(shiftY, bounds.bottom + LINE_RADIUS - point.y);
-    if (point.y + LINE_RADIUS > bounds.top) shiftY = Math.min(shiftY, bounds.top - LINE_RADIUS - point.y);
-  }
-  if (shiftX) { body.group.position.x += shiftX; body.velocity.x *= -0.28; body.angularVelocity *= 0.8; }
-  if (shiftY) { body.group.position.y += shiftY; body.velocity.y *= -0.24; body.velocity.x *= 0.94; body.angularVelocity *= 0.8; }
-  points = strokeWorldPoints(body);
+  const gearSegments = gears.flatMap(gearWorldSegments);
+  for (let iteration = 0; iteration < 2; iteration++) {
+    const points = strokeWorldPoints(body);
+    const wallContacts = [
+      { normal: new THREE.Vector2(1, 0), depthFor: point => bounds.left + LINE_RADIUS - point.x },
+      { normal: new THREE.Vector2(-1, 0), depthFor: point => point.x + LINE_RADIUS - bounds.right },
+      { normal: new THREE.Vector2(0, 1), depthFor: point => bounds.bottom + LINE_RADIUS - point.y },
+      { normal: new THREE.Vector2(0, -1), depthFor: point => point.y + LINE_RADIUS - bounds.top }
+    ];
+    for (const wall of wallContacts) {
+      let deepest = null;
+      for (const point of points) {
+        const depth = wall.depthFor(point);
+        if (depth > 0 && (!deepest || depth > deepest.depth)) deepest = { point, depth };
+      }
+      if (deepest) {
+        body.group.position.x += wall.normal.x * deepest.depth;
+        body.group.position.y += wall.normal.y * deepest.depth;
+        resolveBodyContact(body, wall.normal, deepest.point, undefined, 0.12, 0.5);
+      }
+    }
 
-  for (const point of points) {
-    for (const obstacle of circleObstacles) {
-      const delta = point.clone().sub(new THREE.Vector2(obstacle.x, obstacle.y));
-      const minimum = obstacle.r + LINE_RADIUS;
-      const distance = delta.length();
-      if (distance > 0 && distance < minimum) {
-        const normal = delta.multiplyScalar(1 / distance);
-        body.group.position.x += normal.x * (minimum - distance);
-        body.group.position.y += normal.y * (minimum - distance);
-        bounceBody(body, normal, point);
+    for (const point of strokeWorldPoints(body)) {
+      for (const obstacle of circleObstacles) {
+        const delta = point.clone().sub(new THREE.Vector2(obstacle.x, obstacle.y));
+        const minimum = obstacle.r + LINE_RADIUS;
+        const distance = delta.length();
+        if (distance > 0 && distance < minimum) {
+          const normal = delta.multiplyScalar(1 / distance);
+          body.group.position.x += normal.x * (minimum - distance);
+          body.group.position.y += normal.y * (minimum - distance);
+          resolveBodyContact(body, normal, point);
+        }
       }
-    }
-    for (const segment of staticSegments) {
-      const closest = closestPointOnSegment(point, segment.a, segment.b);
-      const delta = point.clone().sub(closest);
-      const minimum = LINE_RADIUS + segment.radius;
-      const distance = delta.length();
-      if (distance > 0 && distance < minimum) {
-        const normal = delta.multiplyScalar(1 / distance);
-        body.group.position.x += normal.x * (minimum - distance);
-        body.group.position.y += normal.y * (minimum - distance);
-        bounceBody(body, normal, point);
+      for (const segment of staticSegments) {
+        const closest = closestPointOnSegment(point, segment.a, segment.b);
+        const delta = point.clone().sub(closest);
+        const minimum = LINE_RADIUS + segment.radius;
+        const distance = delta.length();
+        if (distance > 0 && distance < minimum) {
+          const normal = delta.multiplyScalar(1 / distance);
+          body.group.position.x += normal.x * (minimum - distance);
+          body.group.position.y += normal.y * (minimum - distance);
+          resolveBodyContact(body, normal, closest);
+        }
       }
-    }
-    for (const segment of gears.flatMap(gearWorldSegments)) {
-      const closest = closestPointOnSegment(point, segment.a, segment.b);
-      const delta = point.clone().sub(closest);
-      const minimum = LINE_RADIUS + segment.radius;
-      const distance = delta.length();
-      if (distance > 0 && distance < minimum) {
-        const normal = delta.multiplyScalar(1 / distance);
-        const relative = body.velocity.clone().sub(gearSurfaceVelocity(segment.gear, closest));
-        const impulse = Math.max(0, -relative.dot(normal)) * body.mass;
-        body.group.position.x += normal.x * (minimum - distance);
-        body.group.position.y += normal.y * (minimum - distance);
-        bounceBody(body, normal, point);
-        applyGearImpulse(segment.gear, closest, normal, impulse);
+      for (const segment of gearSegments) {
+        const closest = closestPointOnSegment(point, segment.a, segment.b);
+        const delta = point.clone().sub(closest);
+        const minimum = LINE_RADIUS + segment.radius;
+        const distance = delta.length();
+        if (distance > 0 && distance < minimum) {
+          const normal = delta.multiplyScalar(1 / distance);
+          body.group.position.x += normal.x * (minimum - distance);
+          body.group.position.y += normal.y * (minimum - distance);
+          const impulse = resolveBodyContact(body, normal, closest, gearSurfaceVelocity(segment.gear, closest));
+          applyGearImpulse(segment.gear, closest, normal, impulse);
+        }
       }
     }
   }
@@ -521,12 +579,14 @@ function collideBallSegment(a, b, radius = LINE_RADIUS, bounce = 0.42, body = nu
   const relative = ballVelocity.clone().sub(surfaceVelocity);
   const into = relative.dot(normal);
   if (into < 0) {
-    const impulse = -(1 + bounce) * into;
-    ballVelocity.addScaledVector(normal, impulse);
+    const arm = body ? closest.clone().sub(new THREE.Vector2(body.group.position.x, body.group.position.y)) : null;
+    const rotationalTerm = body ? Math.pow(cross2(arm, normal), 2) / body.inertia : 0;
+    const denominator = 1 / BALL_MASS + (body ? 1 / body.mass : 0) + rotationalTerm;
+    const impulse = -(1 + bounce) * into / denominator;
+    ballVelocity.addScaledVector(normal, impulse / BALL_MASS);
     if (body) {
-      body.velocity.addScaledVector(normal, -impulse * 0.12 / body.mass);
-      const arm = closest.clone().sub(new THREE.Vector2(body.group.position.x, body.group.position.y));
-      body.angularVelocity -= (arm.x * normal.y - arm.y * normal.x) * impulse * 0.018 / body.mass;
+      body.velocity.addScaledVector(normal, -impulse / body.mass);
+      body.angularVelocity -= cross2(arm, normal) * impulse / body.inertia;
     }
     if (gear) applyGearImpulse(gear, closest, normal, impulse);
   }
@@ -708,7 +768,11 @@ window.__gameDebug = {
       gears: gears.map(gear => ({ mode: gear.mode, angle: gear.group.rotation.z, speed: gear.angularVelocity })),
       level: currentLevelIndex + 1,
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
-      firstStrokeY: strokes[0]?.group.position.y ?? null
+      firstStrokeY: strokes[0]?.group.position.y ?? null,
+      firstStrokeAngle: strokes[0]?.group.rotation.z ?? null,
+      firstStrokeAngularVelocity: strokes[0]?.angularVelocity ?? null,
+      firstStrokeMass: strokes[0]?.mass ?? null,
+      firstStrokeInertia: strokes[0]?.inertia ?? null
     };
   }
 };
