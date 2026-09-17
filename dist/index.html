@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#4f46e5" />
+    <meta name="description" content="一款使用 three.js 製作的手機腦洞解謎小遊戲。" />
+    <title>腦洞一下</title>
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="topbar">
+        <button id="homeButton" class="icon-button" aria-label="重新開始">↻</button>
+        <div class="progress-wrap" aria-label="關卡進度">
+          <span id="levelLabel">第 1 關</span>
+          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
+        </div>
+        <button id="hintButton" class="icon-button hint-button" aria-label="顯示提示">?</button>
+      </header>
+
+      <section class="prompt-card">
+        <p class="eyebrow">想想看，不一定要照規則來</p>
+        <h1 id="question">把月亮移走，叫醒太陽</h1>
+      </section>
+
+      <section id="gameStage" class="game-stage" aria-label="3D 遊戲區">
+        <div id="canvasMount" class="canvas-mount"></div>
+        <div class="stage-note" id="stageNote">拖曳畫面中的物件</div>
+        <div id="successBurst" class="success-burst" aria-hidden="true">答對了！</div>
+      </section>
+
+      <footer class="bottom-bar">
+        <div class="level-dots" id="levelDots" aria-label="關卡列表"></div>
+        <button id="nextButton" class="next-button" disabled>下一關 <span>→</span></button>
+      </footer>
+    </main>
+
+    <dialog id="hintDialog" class="hint-dialog">
+      <button id="closeHint" class="dialog-close" aria-label="關閉提示">×</button>
+      <div class="bulb">💡</div>
+      <p class="hint-kicker">小提示</p>
+      <h2 id="hintText">有些東西只是擋住了視線。</h2>
+      <button id="gotItButton" class="got-it-button">我再試試</button>
+    </dialog>
+
+    <dialog id="finishDialog" class="finish-dialog">
+      <div class="trophy">🏆</div>
+      <p class="hint-kicker">全部破解</p>
+      <h2>你的腦洞比畫面還大！</h2>
+      <p>三個關卡都完成了。</p>
+      <button id="playAgainButton" class="got-it-button">再玩一次</button>
+    </dialog>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
