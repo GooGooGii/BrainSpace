@@ -36,7 +36,7 @@ await new Promise(resolve => setTimeout(resolve, 1200));
 const result = await evaluate(`new Promise(resolve => {
   const levelCards = document.querySelectorAll('[data-level]').length;
   const initiallyUnlocked = [...document.querySelectorAll('[data-level]')].filter(button => !button.disabled).length;
-  window.__gameDebug.loadLevel(7);
+  window.__gameDebug.loadLevel(11);
   setTimeout(() => {
     const canvas = document.querySelector('canvas');
     const rect = canvas.getBoundingClientRect();
@@ -54,7 +54,7 @@ const result = await evaluate(`new Promise(resolve => {
   }, 120);
 })`);
 const tipping = await evaluate(`new Promise(resolve => {
-  window.__gameDebug.loadLevel(0);
+  window.__gameDebug.loadLevel(3);
   setTimeout(() => {
     const canvas = document.querySelector('canvas');
     const rect = canvas.getBoundingClientRect();
@@ -68,10 +68,28 @@ const tipping = await evaluate(`new Promise(resolve => {
     setTimeout(() => resolve({ started, settled: window.__gameDebug.getState() }), 1900);
   }, 120);
 })`);
+const tutorial = await evaluate(`new Promise(resolve => {
+  window.__gameDebug.loadLevel(0);
+  setTimeout(() => {
+    const canvas = document.querySelector('canvas');
+    const rect = canvas.getBoundingClientRect();
+    const fire = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 19, pointerType: 'touch', clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }));
+    fire('pointerdown', rect.left + rect.width * .35, rect.top + rect.height * .4);
+    fire('pointermove', rect.left + rect.width * .52, rect.top + rect.height * .5);
+    fire('pointerup', rect.left + rect.width * .52, rect.top + rect.height * .5);
+    setTimeout(() => resolve({ state: window.__gameDebug.getState(), banner: document.querySelector('#resultBanner').textContent }), 80);
+  }, 120);
+})`);
+const catalog = await evaluate(`Array.from({ length: 12 }, (_, index) => {
+  window.__gameDebug.loadLevel(index);
+  const state = window.__gameDebug.getState();
+  return { level: state.level, goal: state.goal, hasBall: !!state.ball, gears: state.gears.length, staticSegments: state.staticSegments };
+})`);
 socket.close();
 chrome.kill();
-console.log(JSON.stringify({ ...result, tipping }));
+console.log(JSON.stringify({ ...result, tipping, tutorial, catalog }));
 const modes = new Set(result.started.gears.map(gear => gear.mode));
 const movingGearChanged = result.later.gears.some((gear, index) => ["constant", "variable"].includes(gear.mode) && gear.angle !== result.started.gears[index].angle);
 const tippedFromOffCenterContact = Math.abs(tipping.settled.firstStrokeAngle - tipping.started.firstStrokeAngle) > 0.04;
-if (result.ready !== "true" || result.levelCards !== 8 || result.initiallyUnlocked !== 1 || result.strokes !== "1 / 3" || !result.canvas || result.started.level !== 8 || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 3 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame || !tippedFromOffCenterContact || tipping.started.firstStrokeMass <= 0 || tipping.started.firstStrokeInertia <= 0) process.exitCode = 1;
+const goalTypes = new Set(catalog.map(level => level.goal));
+if (result.ready !== "true" || result.levelCards !== 12 || result.initiallyUnlocked !== 1 || result.strokes !== "1 / 3" || !result.canvas || result.started.level !== 12 || result.started.goal !== "ballBox" || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 4 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame || !tippedFromOffCenterContact || tipping.started.firstStrokeMass <= 0 || tipping.started.firstStrokeInertia <= 0 || !tutorial.state.finished || tutorial.state.goal !== "draw" || !tutorial.banner.includes("★") || catalog.length !== 12 || goalTypes.size !== 6) process.exitCode = 1;

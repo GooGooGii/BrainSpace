@@ -43,6 +43,7 @@ const white = new THREE.MeshBasicMaterial({ color: 0xf8f5eb });
 const orange = new THREE.MeshBasicMaterial({ color: 0xff9f1c });
 const orangeDark = new THREE.MeshBasicMaterial({ color: 0xcc6c00 });
 const transparentWhite = new THREE.MeshBasicMaterial({ color: 0xf8f5eb, transparent: true, opacity: 0.22 });
+const forbiddenRed = new THREE.MeshBasicMaterial({ color: 0xe74c5b, transparent: true, opacity: 0.2 });
 
 let ball;
 let ballVelocity = new THREE.Vector2();
@@ -61,17 +62,22 @@ let ballStart = new THREE.Vector2(-2.25, 5.55);
 const circleObstacles = [];
 const staticSegments = [];
 const gears = [];
-let basket = { left: 2.75, right: 4.05, bottom: -6.25, top: -5.08 };
+let basket = null;
+let target = null;
 
 const levels = [
-  { name: "第一道斜坡", difficulty: 1, strokes: 2, mission: "畫一條路，讓球進盒子", hintTitle: "先從斜坡開始", hint: "畫一條由左上往右下的斜線，引導球滑向盒子。", ball: [-3.2, 5.3], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [] },
-  { name: "借牆轉彎", difficulty: 1, strokes: 2, mission: "利用牆壁改變球的方向", hintTitle: "牆壁也是工具", hint: "不一定要直接接住球，先讓它撞牆再回來。", ball: [2.8, 5.3], basket: [-3.9, -2.6, -6.2, -5.0], obstacles: [{ style: "cross", x: 0, y: -0.4, r: 0.65, mode: "fixed" }] },
-  { name: "繞過圓環", difficulty: 2, strokes: 2, mission: "避開障礙，把球送到底部", hintTitle: "分成兩段思考", hint: "第一筆改變方向，第二筆接住落下的球。", ball: [-2.8, 5.4], basket: [2.8, 4.1, -6.2, -5.0], obstacles: [{ style: "cross", x: -0.7, y: 1.5, r: 0.7, mode: "fixed" }, { style: "cross", x: 1.7, y: -1.2, r: 0.62, mode: "fixed" }] },
-  { name: "順著齒輪", difficulty: 2, strokes: 3, mission: "利用恆速齒輪推動球", hintTitle: "順著旋轉方向", hint: "讓球接觸齒輪外側的突齒，旋轉會帶著球走。", ball: [-3.3, 5.4], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [{ style: "wheel", x: -0.8, y: 1.8, r: 0.85, mode: "constant", speed: 0.9 }, { style: "cross", x: 2.1, y: -1.5, r: 0.62, mode: "fixed" }] },
-  { name: "喚醒轉盤", difficulty: 3, strokes: 3, mission: "撞動齒輪，再讓它推球", hintTitle: "先給它一點力量", hint: "碰撞驅動齒輪原本不動；用掉落的線或球撞它。", ball: [2.9, 5.4], basket: [-3.9, -2.6, -6.2, -5.0], obstacles: [{ style: "cross", x: 0.6, y: 2.1, r: 0.72, mode: "impact", damping: 0.75 }, { style: "cross", x: -1.8, y: -1.3, r: 0.62, mode: "fixed" }] },
-  { name: "逆流雙輪", difficulty: 3, strokes: 3, mission: "穿過兩個反向齒輪", hintTitle: "找出安全的一側", hint: "兩個齒輪方向相反，選擇能把球送向盒子的接觸面。", ball: [-3.4, 5.5], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [{ style: "wheel", x: -1.4, y: 1.7, r: 0.78, mode: "constant", speed: 0.85 }, { style: "wheel", x: 1.5, y: -1.0, r: 0.82, mode: "constant", speed: -0.95 }] },
-  { name: "抓準節奏", difficulty: 4, strokes: 3, mission: "通過忽快忽慢的齒輪", hintTitle: "等待也是解法", hint: "變速齒輪會加速、減速甚至反轉；在合適時機完成第一筆。", ball: [0, 5.5], basket: [-0.65, 0.65, -6.2, -5.0], obstacles: [{ style: "wheel", x: -1.8, y: 1.5, r: 0.85, mode: "variable", baseSpeed: -0.45, amplitude: 1.1, frequency: 1.25 }, { style: "wheel", x: 1.8, y: -1.2, r: 0.85, mode: "variable", baseSpeed: 0.4, amplitude: 1.0, frequency: 0.9 }] },
-  { name: "齒輪工房", difficulty: 4, strokes: 3, mission: "穿越四種齒輪機關", hintTitle: "每種齒輪規則不同", hint: "固定、碰撞驅動、恆速與變速齒輪都在這裡；先觀察再下筆。", ball: [-3.2, 5.5], basket: [2.75, 4.05, -6.25, -5.08], obstacles: [{ style: "wheel", x: -2.2, y: 3.2, r: 0.75, mode: "variable", baseSpeed: -0.5, amplitude: 0.9, frequency: 1.1 }, { style: "cross", x: 1.5, y: 3.0, r: 0.62, mode: "impact", damping: 1.1 }, { style: "cross", x: -0.7, y: 0.2, r: 0.6, mode: "fixed" }, { style: "wheel", x: 2.0, y: -1.1, r: 0.8, mode: "constant", speed: 0.85 }, { style: "cross", x: -1.3, y: -2.7, r: 0.58, mode: "impact", damping: 0.8 }] }
+  { name: "第一筆", difficulty: 1, strokes: 1, mission: "畫出任意物件", hintTitle: "畫什麼都可以", hint: "在深色區域拖動手指，放開後物件會受到重力。", ball: null, goal: { type: "draw" }, parTime: 6, parStrokes: 1, obstacles: [] },
+  { name: "推向左牆", difficulty: 1, strokes: 1, mission: "讓球碰到橙色牆面", hintTitle: "用重量推球", hint: "在球的右上方畫一個有重量的斜物件。", ball: [1.8, 3.8], goal: { type: "wall", side: "left", minY: -4.8, maxY: 1.2 }, parTime: 10, parStrokes: 1, bars: [{ x: -1.3, y: 0.8, length: 4.6, thickness: 0.16, rotation: -0.18 }], obstacles: [] },
+  { name: "物件入杯", difficulty: 1, strokes: 1, mission: "把手繪物件放進橙色杯子", hintTitle: "紅色區不能畫", hint: "在杯口上方畫一個小物件，利用重力讓它落入杯中。", ball: null, basket: [-0.8, 0.8, -5.8, -4.2], goal: { type: "strokeBox" }, noDraw: [{ x: 0, y: -5.1, w: 2.3, h: 2.7 }], parTime: 8, parStrokes: 1, obstacles: [] },
+  { name: "第一道斜坡", difficulty: 1, strokes: 1, mission: "把球送進右下方盒子", hintTitle: "一條斜線就夠", hint: "讓線條落下後形成往右的斜坡。", ball: [-3.2, 4.9], basket: [2.7, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 12, parStrokes: 1, obstacles: [] },
+  { name: "越過高牆", difficulty: 2, strokes: 2, mission: "讓球越過中央牆進盒子", hintTitle: "先接，再導向", hint: "不要只畫一條長斜線；想想如何讓物件的重心替你改變角度。", ball: [-3.1, 5.1], basket: [2.75, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 15, parStrokes: 2, bars: [{ x: 0.3, y: -2.9, length: 5.1, thickness: 0.18, rotation: Math.PI / 2 }], obstacles: [] },
+  { name: "穿過窄門", difficulty: 2, strokes: 2, mission: "讓球穿過缺口碰到目標", hintTitle: "控制落下的方向", hint: "上下兩道牆之間只有一個入口，短而重的形狀比長線更好控制。", ball: [-3.2, 4.9], goal: { type: "target", x: 3.4, y: -4.7, r: 0.58 }, parTime: 16, parStrokes: 2, bars: [{ x: 0.5, y: 2.8, length: 5.2, thickness: 0.16, rotation: 0 }, { x: -1.2, y: -1.3, length: 5.4, thickness: 0.16, rotation: 0 }], obstacles: [{ style: "cross", x: 1.5, y: 0.5, r: 0.62, mode: "fixed" }] },
+  { name: "喚醒轉盤", difficulty: 2, strokes: 1, mission: "讓白色轉盤轉起來", hintTitle: "撞偏一點", hint: "撞中心只會推，不會轉；讓重物打在轉盤外側。", ball: null, goal: { type: "spinGear", speed: 0.5 }, parTime: 10, parStrokes: 1, obstacles: [{ style: "cross", x: 0, y: -1.4, r: 0.9, mode: "impact", damping: 0.55 }] },
+  { name: "借輪轉向", difficulty: 3, strokes: 2, mission: "撞動轉盤，再把球送進左杯", hintTitle: "先啟動機關", hint: "碰撞式轉盤會慢慢減速；先讓落下物撞動它，再利用旋轉方向導球。", ball: [3.0, 5.2], basket: [-4.0, -2.65, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 20, parStrokes: 2, obstacles: [{ style: "wheel", x: 0.8, y: 0.8, r: 0.88, mode: "impact", damping: 0.5 }, { style: "cross", x: -1.7, y: -2.5, r: 0.6, mode: "fixed" }] },
+  { name: "逆向輸送", difficulty: 3, strokes: 2, mission: "利用恆速齒輪把球送往右側", hintTitle: "碰哪一側很重要", hint: "齒輪上下兩側的推動方向相反，先觀察再畫導軌。", ball: [-3.25, 5.25], basket: [2.75, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 18, parStrokes: 2, obstacles: [{ style: "wheel", x: -0.8, y: 0.8, r: 0.9, mode: "constant", speed: -1.05 }, { style: "cross", x: 1.8, y: -2.3, r: 0.62, mode: "fixed" }] },
+  { name: "從禁區外投放", difficulty: 3, strokes: 2, mission: "讓手繪物穿過障礙落入杯中", hintTitle: "畫一個會翻身的形狀", hint: "禁畫區封住直線路徑，利用偏心物件落地後的翻轉。", ball: null, basket: [2.7, 4.0, -6.2, -5.0], goal: { type: "strokeBox" }, noDraw: [{ x: 3.35, y: -4.8, w: 2.1, h: 3.2 }], parTime: 18, parStrokes: 2, bars: [{ x: 1.1, y: -2.2, length: 4.5, thickness: 0.16, rotation: -0.25 }], obstacles: [{ style: "cross", x: -1.2, y: 0.4, r: 0.7, mode: "fixed" }] },
+  { name: "抓準節奏", difficulty: 4, strokes: 3, mission: "穿過忽快忽慢的雙輪", hintTitle: "等待也是解法", hint: "變速齒輪會加速、減速甚至反轉；下筆的時機也是解法之一。", ball: [0, 5.45], basket: [-0.68, 0.68, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 24, parStrokes: 3, obstacles: [{ style: "wheel", x: -1.8, y: 1.3, r: 0.85, mode: "variable", baseSpeed: -0.45, amplitude: 1.1, frequency: 1.25 }, { style: "wheel", x: 1.8, y: -1.4, r: 0.85, mode: "variable", baseSpeed: 0.4, amplitude: 1.0, frequency: 0.9 }] },
+  { name: "齒輪工房", difficulty: 4, strokes: 3, mission: "穿越四種機關把球送進盒子", hintTitle: "逐段解開", hint: "固定、碰撞驅動、恆速與變速齒輪規則都不同；先替球規劃三段路。", ball: [-3.2, 5.5], basket: [2.75, 4.05, -6.25, -5.08], goal: { type: "ballBox" }, parTime: 30, parStrokes: 3, bars: [{ x: 0.2, y: -4.0, length: 3.0, thickness: 0.15, rotation: 0.12 }], obstacles: [{ style: "wheel", x: -2.2, y: 3.0, r: 0.75, mode: "variable", baseSpeed: -0.5, amplitude: 0.9, frequency: 1.1 }, { style: "cross", x: 1.5, y: 3.0, r: 0.62, mode: "impact", damping: 1.1 }, { style: "cross", x: -0.7, y: 0.2, r: 0.6, mode: "fixed" }, { style: "wheel", x: 2.0, y: -1.1, r: 0.8, mode: "constant", speed: 0.85 }, { style: "cross", x: -1.3, y: -2.7, r: 0.58, mode: "impact", damping: 0.8 }] }
 ];
 
 function readUnlockedLevel() {
@@ -83,6 +89,19 @@ function writeUnlockedLevel(value) {
   try { localStorage.setItem("brain-physics-unlocked", String(value)); } catch (_) {}
 }
 
+function readStars() {
+  try { return JSON.parse(localStorage.getItem("brain-physics-stars") || "{}"); }
+  catch (_) { return {}; }
+}
+
+function writeLevelStars(index, value) {
+  try {
+    const stars = readStars();
+    stars[index] = Math.max(Number(stars[index]) || 0, value);
+    localStorage.setItem("brain-physics-stars", JSON.stringify(stars));
+  } catch (_) {}
+}
+
 function disc(x, y, radius, mat = white, z = 0) {
   const object = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), mat);
   object.position.set(x, y, z);
@@ -90,8 +109,8 @@ function disc(x, y, radius, mat = white, z = 0) {
   return object;
 }
 
-function ring(x, y, outer, inner) {
-  const object = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), white);
+function ring(x, y, outer, inner, mat = white) {
+  const object = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), mat);
   object.position.set(x, y, 0);
   gameRoot.add(object);
 }
@@ -171,21 +190,41 @@ function clearScene() {
 }
 
 function createScene(level) {
-  basket = { left: level.basket[0], right: level.basket[1], bottom: level.basket[2], top: level.basket[3] };
-  ballStart = new THREE.Vector2(level.ball[0], level.ball[1]);
-  level.obstacles.forEach(obstacle => {
+  ball = null;
+  basket = level.basket ? { left: level.basket[0], right: level.basket[1], bottom: level.basket[2], top: level.basket[3] } : null;
+  target = level.goal?.type === "target" ? level.goal : null;
+  if (level.ball) ballStart = new THREE.Vector2(level.ball[0], level.ball[1]);
+  (level.obstacles ?? []).forEach(obstacle => {
     const config = { mode: obstacle.mode, speed: obstacle.speed, baseSpeed: obstacle.baseSpeed, amplitude: obstacle.amplitude, frequency: obstacle.frequency, damping: obstacle.damping };
     if (obstacle.style === "wheel") addWheel(obstacle.x, obstacle.y, obstacle.r, config);
     else addCrossRing(obstacle.x, obstacle.y, obstacle.r, config);
   });
-  bar(basket.left, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
-  bar(basket.right, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
-  bar((basket.left + basket.right) / 2, basket.bottom, basket.right - basket.left, 0.12, 0, orange, true);
-  disc(ballStart.x, ballStart.y, BALL_RADIUS + 0.09, orangeDark, -0.02);
-  ball = disc(ballStart.x, ballStart.y, BALL_RADIUS, orange, 0.2);
-  const halo = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.5, 40), transparentWhite);
-  halo.position.set(ballStart.x, ballStart.y, 0);
-  gameRoot.add(halo);
+  (level.bars ?? []).forEach(item => bar(item.x, item.y, item.length, item.thickness, item.rotation ?? 0, white, true));
+  (level.noDraw ?? []).forEach(zone => {
+    const area = new THREE.Mesh(new THREE.PlaneGeometry(zone.w, zone.h), forbiddenRed);
+    area.position.set(zone.x, zone.y, -0.15);
+    gameRoot.add(area);
+  });
+  if (basket) {
+    bar(basket.left, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
+    bar(basket.right, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
+    bar((basket.left + basket.right) / 2, basket.bottom, basket.right - basket.left, 0.12, 0, orange, true);
+  }
+  if (target) {
+    ring(target.x, target.y, target.r + 0.12, target.r, orange);
+    disc(target.x, target.y, target.r * 0.32, orange, -0.02);
+  }
+  if (level.goal?.type === "wall") {
+    const x = level.goal.side === "left" ? WORLD.left + 0.08 : WORLD.right - 0.08;
+    bar(x, (level.goal.minY + level.goal.maxY) / 2, level.goal.maxY - level.goal.minY, 0.16, Math.PI / 2, orange, true);
+  }
+  if (level.ball) {
+    disc(ballStart.x, ballStart.y, BALL_RADIUS + 0.09, orangeDark, -0.02);
+    ball = disc(ballStart.x, ballStart.y, BALL_RADIUS, orange, 0.2);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.5, 40), transparentWhite);
+    halo.position.set(ballStart.x, ballStart.y, 0);
+    gameRoot.add(halo);
+  }
 }
 
 function visibleBounds() {
@@ -227,7 +266,10 @@ function pointSegmentDistance(point, a, b) {
 function drawPointIsClear(point) {
   const margin = 0.045;
   if (!validPoint(point)) return false;
-  if (point.distanceTo(new THREE.Vector2(ball.position.x, ball.position.y)) < BALL_RADIUS + LINE_RADIUS + margin) return false;
+  if (ball && point.distanceTo(new THREE.Vector2(ball.position.x, ball.position.y)) < BALL_RADIUS + LINE_RADIUS + margin) return false;
+  for (const zone of levels[currentLevelIndex].noDraw ?? []) {
+    if (Math.abs(point.x - zone.x) < zone.w / 2 + LINE_RADIUS && Math.abs(point.y - zone.y) < zone.h / 2 + LINE_RADIUS) return false;
+  }
   for (const obstacle of circleObstacles) {
     if (point.distanceTo(new THREE.Vector2(obstacle.x, obstacle.y)) < obstacle.r + LINE_RADIUS + margin) return false;
   }
@@ -342,13 +384,14 @@ function endStroke(event) {
   if (currentStroke && currentStroke.points.length > 1) {
     strokes.push(makeStrokeBody(currentStroke));
     if (!running) startDrop();
+    checkGoal();
   } else {
     currentStroke?.meshes.forEach(mesh => drawingRoot.remove(mesh));
   }
   currentStroke = null;
   activePointerId = null;
   updateControls();
-  instructionEl.textContent = strokes.length < maxStrokes ? `球與線正在掉落，還可以畫 ${maxStrokes - strokes.length} 筆` : "筆數用完了，觀察物理結果";
+  if (!finished) instructionEl.textContent = strokes.length < maxStrokes ? `物件正在運動，還可以畫 ${maxStrokes - strokes.length} 筆` : "筆數用完了，觀察物理結果";
 }
 
 renderer.domElement.addEventListener("pointerdown", beginStroke, { passive: false });
@@ -382,7 +425,7 @@ function resetGame() {
   activePointerId = null;
   if (currentStroke) currentStroke.meshes.forEach(mesh => drawingRoot.remove(mesh));
   currentStroke = null;
-  ball.position.set(ballStart.x, ballStart.y, 0.2);
+  if (ball) ball.position.set(ballStart.x, ballStart.y, 0.2);
   ballVelocity.set(0, 0);
   gearTime = 0;
   gears.forEach(gear => {
@@ -615,19 +658,36 @@ function collideBallWithWalls() {
 
 function physicsStep(dt) {
   strokes.forEach(body => updateStrokeBody(body, dt));
-  ballVelocity.y -= GRAVITY * dt;
-  ballVelocity.multiplyScalar(0.999);
-  ball.position.x += ballVelocity.x * dt;
-  ball.position.y += ballVelocity.y * dt;
-  collideBallWithWalls();
-  circleObstacles.forEach(collideBallCircle);
-  staticSegments.forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4));
-  gears.flatMap(gearWorldSegments).forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4, null, segment.gear));
-  strokes.forEach(body => {
-    const points = strokeWorldPoints(body);
-    for (let i = 1; i < points.length; i++) collideBallSegment(points[i - 1], points[i], LINE_RADIUS, 0.32, body);
-  });
-  if (ball.position.x > basket.left + BALL_RADIUS && ball.position.x < basket.right - BALL_RADIUS && ball.position.y < basket.top && ball.position.y > basket.bottom) win();
+  if (ball) {
+    ballVelocity.y -= GRAVITY * dt;
+    ballVelocity.multiplyScalar(0.999);
+    ball.position.x += ballVelocity.x * dt;
+    ball.position.y += ballVelocity.y * dt;
+    collideBallWithWalls();
+    circleObstacles.forEach(collideBallCircle);
+    staticSegments.forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4));
+    gears.flatMap(gearWorldSegments).forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4, null, segment.gear));
+    strokes.forEach(body => {
+      const points = strokeWorldPoints(body);
+      for (let i = 1; i < points.length; i++) collideBallSegment(points[i - 1], points[i], LINE_RADIUS, 0.32, body);
+    });
+  }
+  checkGoal();
+}
+
+function checkGoal() {
+  if (finished) return;
+  const goal = levels[currentLevelIndex].goal;
+  if (!goal) return;
+  if (goal.type === "draw" && strokes.length > 0) return win();
+  if (goal.type === "ballBox" && ball && basket && ball.position.x > basket.left + BALL_RADIUS && ball.position.x < basket.right - BALL_RADIUS && ball.position.y < basket.top && ball.position.y > basket.bottom) return win();
+  if (goal.type === "strokeBox" && basket && strokes.some(body => strokeWorldPoints(body).every(point => point.x > basket.left + LINE_RADIUS && point.x < basket.right - LINE_RADIUS && point.y > basket.bottom + LINE_RADIUS && point.y < basket.top - LINE_RADIUS))) return win();
+  if (goal.type === "target" && ball && new THREE.Vector2(ball.position.x, ball.position.y).distanceTo(new THREE.Vector2(goal.x, goal.y)) < goal.r) return win();
+  if (goal.type === "wall" && ball) {
+    const touchedSide = goal.side === "left" ? ball.position.x <= WORLD.left + BALL_RADIUS + 0.18 : ball.position.x >= WORLD.right - BALL_RADIUS - 0.18;
+    if (touchedSide && ball.position.y >= goal.minY && ball.position.y <= goal.maxY) return win();
+  }
+  if (goal.type === "spinGear" && gears.some(gear => gear.mode === "impact" && Math.abs(gear.angularVelocity) >= goal.speed)) return win();
 }
 
 function win() {
@@ -636,7 +696,10 @@ function win() {
   finished = true;
   const unlocked = Math.max(readUnlockedLevel(), Math.min(levels.length, currentLevelIndex + 2));
   writeUnlockedLevel(unlocked);
-  resultBanner.innerHTML = `<div>過關！ ${elapsed.toFixed(1)} 秒完成</div><div class="result-actions"><button data-result-action="levels">選關</button><button data-result-action="next">${currentLevelIndex === levels.length - 1 ? "完成" : "下一關"}</button></div>`;
+  const level = levels[currentLevelIndex];
+  const earnedStars = 1 + (strokes.length <= level.parStrokes ? 1 : 0) + (elapsed <= level.parTime ? 1 : 0);
+  writeLevelStars(currentLevelIndex, earnedStars);
+  resultBanner.innerHTML = `<div class="win-stars">${"★".repeat(earnedStars)}${"☆".repeat(3 - earnedStars)}</div><div>過關！ ${elapsed.toFixed(1)} 秒・${strokes.length} 筆</div><div class="result-actions"><button data-result-action="levels">選關</button><button data-result-action="next">${currentLevelIndex === levels.length - 1 ? "完成" : "下一關"}</button></div>`;
   resultBanner.className = "result-banner success show";
   instructionEl.textContent = "漂亮的物理解法！";
   if (navigator.vibrate) navigator.vibrate([40, 40, 100]);
@@ -645,13 +708,16 @@ function win() {
 
 function renderLevelSelect() {
   const unlocked = readUnlockedLevel();
-  progressText.textContent = `已解鎖 ${unlocked} / ${levels.length}`;
+  const savedStars = readStars();
+  const totalStars = Object.values(savedStars).reduce((sum, value) => sum + Number(value || 0), 0);
+  progressText.textContent = `已解鎖 ${unlocked} / ${levels.length}　★ ${totalStars} / ${levels.length * 3}`;
   levelGrid.innerHTML = levels.map((level, index) => {
     const locked = index + 1 > unlocked;
+    const stars = Number(savedStars[index]) || 0;
     return `<button class="level-card" data-level="${index}" ${locked ? "disabled" : ""}>
       <span class="level-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="level-name">${level.name}</span>
-      <span class="level-meta"><span class="difficulty">${"●".repeat(level.difficulty)}${"○".repeat(4 - level.difficulty)}</span> · ${level.strokes} 筆</span>
+      <span class="level-meta"><span class="difficulty">${"●".repeat(level.difficulty)}${"○".repeat(4 - level.difficulty)}</span> · ${level.strokes} 筆　<span class="card-stars">${"★".repeat(stars)}${"☆".repeat(3 - stars)}</span></span>
       ${locked ? '<span class="level-lock">🔒</span>' : ""}
     </button>`;
   }).join("");
@@ -763,10 +829,12 @@ window.__gameDebug = {
   getState() {
     return {
       running,
+      finished,
       strokes: strokes.length,
       staticSegments: staticSegments.length,
       gears: gears.map(gear => ({ mode: gear.mode, angle: gear.group.rotation.z, speed: gear.angularVelocity })),
       level: currentLevelIndex + 1,
+      goal: levels[currentLevelIndex].goal?.type ?? null,
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
       firstStrokeY: strokes[0]?.group.position.y ?? null,
       firstStrokeAngle: strokes[0]?.group.rotation.z ?? null,
