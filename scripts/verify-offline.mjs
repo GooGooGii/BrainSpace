@@ -29,7 +29,7 @@ function evaluate(expression) {
       else resolve(message.result.result.value);
     };
     socket.addEventListener("message", listener);
-    socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true } }));
+    socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } }));
   });
 }
 await new Promise(resolve => setTimeout(resolve, 1200));
@@ -40,9 +40,10 @@ const result = await evaluate(`(() => {
   fire('pointerdown', rect.left + rect.width * .25, rect.top + rect.height * .45);
   fire('pointermove', rect.left + rect.width * .42, rect.top + rect.height * .52);
   fire('pointerup', rect.left + rect.width * .42, rect.top + rect.height * .52);
-  return { ready: document.documentElement.dataset.gameReady, strokes: document.querySelector('#strokeCount').textContent.trim(), canvas: !!canvas };
+  const started = window.__gameDebug.getState();
+  return new Promise(resolve => setTimeout(() => resolve({ ready: document.documentElement.dataset.gameReady, strokes: document.querySelector('#strokeCount').textContent.trim(), canvas: !!canvas, started, later: window.__gameDebug.getState() }), 500));
 })()`);
 socket.close();
 chrome.kill();
 console.log(JSON.stringify(result));
-if (result.ready !== "true" || result.strokes !== "1 / 3" || !result.canvas) process.exitCode = 1;
+if (result.ready !== "true" || result.strokes !== "1 / 3" || !result.canvas || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 20) process.exitCode = 1;

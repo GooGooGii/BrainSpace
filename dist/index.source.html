@@ -18,7 +18,7 @@
       <section class="status-row" aria-label="遊戲狀態">
         <div class="status-item"><span>⏱</span><strong id="timer">0.0</strong><small>秒</small></div>
         <div class="status-item"><span>✎</span><strong id="strokeCount">0 / 3</strong><small>畫線</small></div>
-        <p id="instruction">用手指在深色區域畫出路線</p>
+        <p id="instruction">畫第一筆，放開後物理立即開始</p>
       </section>
       <section id="gameBoard" class="game-board" aria-label="物理解謎遊戲區">
         <div id="canvasMount" class="canvas-mount"></div>
@@ -26,14 +26,14 @@
       </section>
       <footer class="controls">
         <button id="undoButton" class="control-button secondary" disabled><span>↶</span>上一步</button>
-        <button id="dropButton" class="control-button primary" disabled><span>●</span>開始落下</button>
+        <button id="dropButton" class="control-button primary" disabled><span>↓</span>自動落下</button>
         <button id="resetButton" class="control-button secondary"><span>↻</span>重新開始</button>
       </footer>
     </main>
     <dialog id="hintDialog" class="hint-dialog">
       <button id="closeHint" class="dialog-close" aria-label="關閉">×</button>
-      <div class="hint-icon">💡</div><h2>別直接畫到盒子</h2>
-      <p>利用斜坡改變球的方向，避開白色障礙物。最多可以畫三筆。</p>
+      <div class="hint-icon">💡</div><h2>線條也有重量</h2>
+      <p>放開第一筆時，球和線會一起開始掉落。利用障礙物與牆壁改變它們的方向。</p>
       <button id="gotItButton">知道了</button>
     </dialog>
     <script defer src="./game.bundle.js"></script>
