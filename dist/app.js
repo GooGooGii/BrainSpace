@@ -65,6 +65,85 @@ const gears = [];
 let basket = null;
 let target = null;
 
+const expansionChapters = [
+  { title: "重力實驗", names: ["落石轉向", "穿環命中", "反彈到右牆", "高空投杯", "偏心啟動", "雙層斜坡", "繞牆入杯", "低空靶心", "折線滑道", "側撞轉盤"] },
+  { title: "重心工房", names: ["長桿翻身", "窄門下墜", "借牆回彈", "斜塔投放", "重錘外緣", "中央高牆", "禁區彎道", "障礙靶場", "兩段接力", "槓桿轉輪"] },
+  { title: "齒輪街區", names: ["碰撞起步", "齒間穿梭", "逆牆反射", "轉輪投杯", "連鎖啟動", "順流雙輪", "輪下禁區", "齒頂靶心", "三輪通道", "重物傳動"] },
+  { title: "節奏機房", names: ["變速入口", "瞬間靶心", "拍牆折返", "節奏投杯", "反轉時刻", "快慢雙層", "禁區計時", "輪間射門", "三拍落球", "變速連桿"] },
+  { title: "大師試煉", names: ["四輪迷陣", "終點狙擊", "極限反彈", "紅區空投", "工房點火", "逆流長廊", "偏心密室", "機關靶場", "五輪接力", "最後一轉"] }
+];
+const expansionGoalPatterns = [
+  ["ballBox", "target", "wall", "strokeBox", "spinGear", "ballBox", "strokeBox", "target", "ballBox", "spinGear"],
+  ["strokeBox", "wall", "target", "ballBox", "spinGear", "target", "ballBox", "strokeBox", "wall", "spinGear"],
+  ["spinGear", "ballBox", "target", "strokeBox", "wall", "ballBox", "spinGear", "target", "strokeBox", "ballBox"],
+  ["target", "spinGear", "ballBox", "wall", "strokeBox", "ballBox", "target", "spinGear", "wall", "strokeBox"],
+  ["wall", "target", "spinGear", "ballBox", "strokeBox", "target", "ballBox", "wall", "spinGear", "ballBox"]
+];
+
+function expansionObstacles(chapter, slot, flip, spinGoal) {
+  const direction = flip ? -1 : 1;
+  if (spinGoal) {
+    const items = [{ style: slot % 2 ? "wheel" : "cross", x: 0.2 * direction, y: -0.7, r: 0.78 + chapter * 0.035, mode: "impact", damping: Math.max(0.45, 0.8 - chapter * 0.07) }];
+    if (chapter >= 2) items.push({ style: "cross", x: 2.25 * direction, y: 2.2, r: 0.58, mode: "fixed" });
+    if (chapter >= 4) items.push({ style: "wheel", x: -2.0 * direction, y: -3.2, r: 0.68, mode: "variable", baseSpeed: -0.3 * direction, amplitude: 0.9, frequency: 1.05 });
+    return items;
+  }
+  if (chapter === 0) return slot % 2 ? [{ style: "cross", x: 0.3 * direction, y: -0.1, r: 0.58, mode: "fixed" }] : [];
+  if (chapter === 1) return [{ style: "cross", x: -1.25 * direction, y: 1.0, r: 0.62, mode: "fixed" }, { style: "cross", x: 1.55 * direction, y: -2.1, r: 0.56, mode: "fixed" }];
+  if (chapter === 2) return [{ style: "wheel", x: -1.25 * direction, y: 1.25, r: 0.74, mode: "impact", damping: 0.65 }, { style: "wheel", x: 1.55 * direction, y: -2.0, r: 0.7, mode: "constant", speed: 0.82 * direction }];
+  if (chapter === 3) return [{ style: "wheel", x: -1.55 * direction, y: 1.45, r: 0.78, mode: "variable", baseSpeed: -0.35 * direction, amplitude: 1.0, frequency: 0.85 + slot * 0.04 }, { style: "wheel", x: 1.45 * direction, y: -1.75, r: 0.74, mode: "constant", speed: 0.9 * direction }];
+  return [{ style: "wheel", x: -2.15 * direction, y: 2.8, r: 0.7, mode: "variable", baseSpeed: -0.4 * direction, amplitude: 1.0, frequency: 1.1 }, { style: "cross", x: 1.65 * direction, y: 2.3, r: 0.57, mode: "impact", damping: 0.7 }, { style: "cross", x: -0.5 * direction, y: -0.3, r: 0.58, mode: "fixed" }, { style: "wheel", x: 2.0 * direction, y: -2.7, r: 0.7, mode: "constant", speed: 0.9 * direction }];
+}
+
+function buildExpansionLevels() {
+  const hints = {
+    ballBox: ["替球安排下一次碰撞", "長線不一定最好，短重物更容易控制角度。"],
+    target: ["先對準最後一次反彈", "目標只需要球碰到，不必停在裡面。"],
+    wall: ["牆面也是終點", "利用落下物的偏心碰撞，把球推往指定側。"],
+    strokeBox: ["先考慮物件的重心", "紅色區不能畫，讓物件翻轉或滑入杯中。"],
+    spinGear: ["撞外緣才有力矩", "重物擊中中心不易旋轉，瞄準齒輪外側。"]
+  };
+  return expansionChapters.flatMap((chapterInfo, chapter) => chapterInfo.names.map((name, slot) => {
+    const type = expansionGoalPatterns[chapter][slot];
+    const flip = (chapter + slot) % 2 === 1;
+    const direction = flip ? -1 : 1;
+    const startX = -3.25 * direction;
+    const endX = 3.35 * direction;
+    const basket = endX > 0 ? [2.7, 4.05, -6.2, -5.0] : [-4.05, -2.7, -6.2, -5.0];
+    const strokesAllowed = chapter < 2 ? 2 : 3;
+    const level = {
+      chapter: chapterInfo.title,
+      name,
+      difficulty: Math.min(4, 2 + Math.floor(chapter / 2)),
+      strokes: strokesAllowed,
+      mission: "",
+      hintTitle: hints[type][0],
+      hint: hints[type][1],
+      parTime: 16 + chapter * 4 + slot,
+      parStrokes: Math.max(1, strokesAllowed - 1),
+      obstacles: expansionObstacles(chapter, slot, flip, type === "spinGear")
+    };
+    if (type === "ballBox") {
+      Object.assign(level, { mission: "把球送進另一側的橙色盒子", ball: [startX, 4.65 + (slot % 4) * 0.22], basket, goal: { type }, bars: slot % 3 === 0 && chapter < 3 ? [{ x: 0.15 * direction, y: -3.45 + (slot % 2) * 0.55, length: 3.4, thickness: 0.16, rotation: 0.16 * direction }] : [] });
+    } else if (type === "target") {
+      const targetY = -4.4 + ((slot % 3) - 1) * 0.55;
+      const targetBar = chapter === 0 ? [{ x: 0.3 * direction, y: 3.65, length: 3.8, thickness: 0.16, rotation: (slot % 2 ? -0.12 : 0.12) * direction }] : [];
+      Object.assign(level, { mission: "讓球碰到橙色靶心", ball: [startX, 4.7 + (slot % 3) * 0.27], goal: { type, x: endX, y: targetY, r: Math.max(0.4, 0.58 - chapter * 0.035) }, bars: targetBar });
+    } else if (type === "wall") {
+      const side = startX > 0 ? "left" : "right";
+      Object.assign(level, { mission: `讓球碰到${side === "left" ? "左" : "右"}側橙色牆面`, ball: [startX, 4.45 + (slot % 4) * 0.24], goal: { type, side, minY: -4.9 + (slot % 3) * 0.5, maxY: 0.8 + (slot % 2) * 0.6 }, bars: chapter < 2 ? [{ x: -0.5 * direction, y: -1.2 + (slot % 3) * 0.45, length: 4.7 - (slot % 2) * 0.6, thickness: 0.16, rotation: (0.2 + chapter * 0.025) * direction }] : [] });
+    } else if (type === "strokeBox") {
+      const cupSide = (chapter + slot) % 2 === 0 ? 1 : -1;
+      const cup = cupSide > 0 ? [2.7, 4.05, -6.2, -5.0] : [-4.05, -2.7, -6.2, -5.0];
+      const zoneX = (cup[0] + cup[1]) / 2;
+      Object.assign(level, { mission: "把手繪物件送進橙色杯子", ball: null, basket: cup, goal: { type }, noDraw: [{ x: zoneX, y: -4.75, w: 2.1 + chapter * 0.08, h: 3.0 + (slot % 3) * 0.22 }], bars: chapter > 0 ? [{ x: 0.25 * direction, y: -1.7 - (slot % 3) * 0.38, length: 3.7 + (chapter % 2) * 0.35, thickness: 0.16, rotation: -0.2 * direction }] : [] });
+    } else {
+      Object.assign(level, { mission: "用手繪物撞動碰撞式轉盤", ball: null, goal: { type, speed: 0.45 + chapter * 0.07 }, bars: chapter >= 3 ? [{ x: -2.6 * direction, y: 1.5, length: 2.8, thickness: 0.15, rotation: -0.25 * direction }] : [] });
+    }
+    return level;
+  }));
+}
+
 const levels = [
   { name: "第一筆", difficulty: 1, strokes: 1, mission: "畫出任意物件", hintTitle: "畫什麼都可以", hint: "在深色區域拖動手指，放開後物件會受到重力。", ball: null, goal: { type: "draw" }, parTime: 6, parStrokes: 1, obstacles: [] },
   { name: "推向左牆", difficulty: 1, strokes: 1, mission: "讓球碰到橙色牆面", hintTitle: "用重量推球", hint: "在球的右上方畫一個有重量的斜物件。", ball: [1.8, 3.8], goal: { type: "wall", side: "left", minY: -4.8, maxY: 1.2 }, parTime: 10, parStrokes: 1, bars: [{ x: -1.3, y: 0.8, length: 4.6, thickness: 0.16, rotation: -0.18 }], obstacles: [] },
@@ -77,11 +156,20 @@ const levels = [
   { name: "逆向輸送", difficulty: 3, strokes: 2, mission: "利用恆速齒輪把球送往右側", hintTitle: "碰哪一側很重要", hint: "齒輪上下兩側的推動方向相反，先觀察再畫導軌。", ball: [-3.25, 5.25], basket: [2.75, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 18, parStrokes: 2, obstacles: [{ style: "wheel", x: -0.8, y: 0.8, r: 0.9, mode: "constant", speed: -1.05 }, { style: "cross", x: 1.8, y: -2.3, r: 0.62, mode: "fixed" }] },
   { name: "從禁區外投放", difficulty: 3, strokes: 2, mission: "讓手繪物穿過障礙落入杯中", hintTitle: "畫一個會翻身的形狀", hint: "禁畫區封住直線路徑，利用偏心物件落地後的翻轉。", ball: null, basket: [2.7, 4.0, -6.2, -5.0], goal: { type: "strokeBox" }, noDraw: [{ x: 3.35, y: -4.8, w: 2.1, h: 3.2 }], parTime: 18, parStrokes: 2, bars: [{ x: 1.1, y: -2.2, length: 4.5, thickness: 0.16, rotation: -0.25 }], obstacles: [{ style: "cross", x: -1.2, y: 0.4, r: 0.7, mode: "fixed" }] },
   { name: "抓準節奏", difficulty: 4, strokes: 3, mission: "穿過忽快忽慢的雙輪", hintTitle: "等待也是解法", hint: "變速齒輪會加速、減速甚至反轉；下筆的時機也是解法之一。", ball: [0, 5.45], basket: [-0.68, 0.68, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 24, parStrokes: 3, obstacles: [{ style: "wheel", x: -1.8, y: 1.3, r: 0.85, mode: "variable", baseSpeed: -0.45, amplitude: 1.1, frequency: 1.25 }, { style: "wheel", x: 1.8, y: -1.4, r: 0.85, mode: "variable", baseSpeed: 0.4, amplitude: 1.0, frequency: 0.9 }] },
-  { name: "齒輪工房", difficulty: 4, strokes: 3, mission: "穿越四種機關把球送進盒子", hintTitle: "逐段解開", hint: "固定、碰撞驅動、恆速與變速齒輪規則都不同；先替球規劃三段路。", ball: [-3.2, 5.5], basket: [2.75, 4.05, -6.25, -5.08], goal: { type: "ballBox" }, parTime: 30, parStrokes: 3, bars: [{ x: 0.2, y: -4.0, length: 3.0, thickness: 0.15, rotation: 0.12 }], obstacles: [{ style: "wheel", x: -2.2, y: 3.0, r: 0.75, mode: "variable", baseSpeed: -0.5, amplitude: 0.9, frequency: 1.1 }, { style: "cross", x: 1.5, y: 3.0, r: 0.62, mode: "impact", damping: 1.1 }, { style: "cross", x: -0.7, y: 0.2, r: 0.6, mode: "fixed" }, { style: "wheel", x: 2.0, y: -1.1, r: 0.8, mode: "constant", speed: 0.85 }, { style: "cross", x: -1.3, y: -2.7, r: 0.58, mode: "impact", damping: 0.8 }] }
+  { name: "齒輪工房", difficulty: 4, strokes: 3, mission: "穿越四種機關把球送進盒子", hintTitle: "逐段解開", hint: "固定、碰撞驅動、恆速與變速齒輪規則都不同；先替球規劃三段路。", ball: [-3.2, 5.5], basket: [2.75, 4.05, -6.25, -5.08], goal: { type: "ballBox" }, parTime: 30, parStrokes: 3, bars: [{ x: 0.2, y: -4.0, length: 3.0, thickness: 0.15, rotation: 0.12 }], obstacles: [{ style: "wheel", x: -2.2, y: 3.0, r: 0.75, mode: "variable", baseSpeed: -0.5, amplitude: 0.9, frequency: 1.1 }, { style: "cross", x: 1.5, y: 3.0, r: 0.62, mode: "impact", damping: 1.1 }, { style: "cross", x: -0.7, y: 0.2, r: 0.6, mode: "fixed" }, { style: "wheel", x: 2.0, y: -1.1, r: 0.8, mode: "constant", speed: 0.85 }, { style: "cross", x: -1.3, y: -2.7, r: 0.58, mode: "impact", damping: 0.8 }] },
+  ...buildExpansionLevels()
 ];
 
 function readUnlockedLevel() {
-  try { return Math.min(levels.length, Math.max(1, Number(localStorage.getItem("brain-physics-unlocked")) || 1)); }
+  try {
+    let unlocked = Math.min(levels.length, Math.max(1, Number(localStorage.getItem("brain-physics-unlocked")) || 1));
+    const savedStars = JSON.parse(localStorage.getItem("brain-physics-stars") || "{}");
+    if (unlocked === 12 && levels.length > 12 && Number(savedStars[11]) > 0) {
+      unlocked = 13;
+      localStorage.setItem("brain-physics-unlocked", "13");
+    }
+    return unlocked;
+  }
   catch (_) { return 1; }
 }
 
@@ -168,8 +256,17 @@ function addCrossRing(x, y, radius, config) {
   group.position.set(x, y, 0);
   gameRoot.add(group);
   group.add(new THREE.Mesh(new THREE.RingGeometry(radius * 0.55, radius, 48), white));
-  circleObstacles.push({ x, y, r: radius });
   const localSegments = [];
+  const rimSegments = 40;
+  for (let i = 0; i < rimSegments; i++) {
+    const a = i / rimSegments * Math.PI * 2;
+    const b = (i + 1) / rimSegments * Math.PI * 2;
+    localSegments.push({
+      a: new THREE.Vector2(Math.cos(a) * radius, Math.sin(a) * radius),
+      b: new THREE.Vector2(Math.cos(b) * radius, Math.sin(b) * radius),
+      radius: 0.045
+    });
+  }
   for (const angle of [0, Math.PI / 2]) {
     const length = radius * 2.7;
     const arm = new THREE.Mesh(new THREE.BoxGeometry(length, 0.09, 0.04), white);
@@ -714,13 +811,17 @@ function renderLevelSelect() {
   levelGrid.innerHTML = levels.map((level, index) => {
     const locked = index + 1 > unlocked;
     const stars = Number(savedStars[index]) || 0;
-    return `<button class="level-card" data-level="${index}" ${locked ? "disabled" : ""}>
+    const chapter = level.chapter ?? "基礎課程";
+    const previousChapter = index ? levels[index - 1].chapter ?? "基礎課程" : null;
+    const chapterHeading = chapter !== previousChapter ? `<h2 class="chapter-heading"><span>${chapter}</span><small>${String(index + 1).padStart(2, "0")}—${String(Math.min(levels.length, index + (chapter === "基礎課程" ? 12 : 10))).padStart(2, "0")}</small></h2>` : "";
+    return `${chapterHeading}<button class="level-card" data-level="${index}" ${locked ? "disabled" : ""}>
       <span class="level-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="level-name">${level.name}</span>
       <span class="level-meta"><span class="difficulty">${"●".repeat(level.difficulty)}${"○".repeat(4 - level.difficulty)}</span> · ${level.strokes} 筆　<span class="card-stars">${"★".repeat(stars)}${"☆".repeat(3 - stars)}</span></span>
       ${locked ? '<span class="level-lock">🔒</span>' : ""}
     </button>`;
   }).join("");
+  requestAnimationFrame(() => levelGrid.querySelector(`[data-level="${Math.max(0, unlocked - 1)}"]`)?.scrollIntoView({ block: "center" }));
 }
 
 function showLevelSelect() {
@@ -834,6 +935,8 @@ window.__gameDebug = {
       staticSegments: staticSegments.length,
       gears: gears.map(gear => ({ mode: gear.mode, angle: gear.group.rotation.z, speed: gear.angularVelocity })),
       level: currentLevelIndex + 1,
+      levelName: levels[currentLevelIndex].name,
+      chapter: levels[currentLevelIndex].chapter ?? "基礎課程",
       goal: levels[currentLevelIndex].goal?.type ?? null,
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
       firstStrokeY: strokes[0]?.group.position.y ?? null,

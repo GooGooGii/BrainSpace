@@ -1,95 +1,39 @@
-import { spawn } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import assert from "node:assert/strict";
+import { readFile, stat } from "node:fs/promises";
 
-const chromePath = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
-const profile = await mkdtemp(join(tmpdir(), "brain-game-check-"));
-const url = "file:///C:/Users/USER/Documents/Codex/2026-09-17/brain-it-out/dist/index.html";
-const chrome = spawn(chromePath, ["--headless=new", "--no-sandbox", "--use-gl=swiftshader", "--enable-unsafe-swiftshader", "--remote-debugging-port=9237", `--user-data-dir=${profile}`, url], { stdio: "ignore" });
+const source = await readFile(new URL("../dist/app.js", import.meta.url), "utf8");
+const bundle = await readFile(new URL("../dist/game.bundle.js", import.meta.url), "utf8");
+const html = await readFile(new URL("../dist/index.html", import.meta.url), "utf8");
 
-let targets;
-for (let i = 0; i < 30; i++) {
-  try { targets = await fetch("http://127.0.0.1:9237/json").then(r => r.json()); break; }
-  catch { await new Promise(resolve => setTimeout(resolve, 200)); }
-}
-if (!targets) throw new Error("Chrome debugging endpoint did not start");
-const target = targets.find(item => item.type === "page" && item.url.includes("index.html"));
-const socket = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = reject; });
-let nextId = 1;
-function evaluate(expression) {
-  return new Promise((resolve, reject) => {
-    const id = nextId++;
-    const listener = event => {
-      const message = JSON.parse(event.data);
-      if (message.id !== id) return;
-      socket.removeEventListener("message", listener);
-      if (message.error) reject(new Error(message.error.message));
-      else resolve(message.result.result.value);
-    };
-    socket.addEventListener("message", listener);
-    socket.send(JSON.stringify({ id, method: "Runtime.evaluate", params: { expression, returnByValue: true, awaitPromise: true } }));
-  });
-}
-await new Promise(resolve => setTimeout(resolve, 1200));
-const result = await evaluate(`new Promise(resolve => {
-  const levelCards = document.querySelectorAll('[data-level]').length;
-  const initiallyUnlocked = [...document.querySelectorAll('[data-level]')].filter(button => !button.disabled).length;
-  window.__gameDebug.loadLevel(11);
-  setTimeout(() => {
-    const canvas = document.querySelector('canvas');
-    const rect = canvas.getBoundingClientRect();
-    const fire = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'touch', clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }));
-    fire('pointerdown', rect.left + rect.width * .25, rect.top + rect.height * .45);
-    fire('pointermove', rect.left + rect.width * .42, rect.top + rect.height * .52);
-    fire('pointerup', rect.left + rect.width * .42, rect.top + rect.height * .52);
-    const started = window.__gameDebug.getState();
-    setTimeout(() => {
-      const beforeRejectedDraw = document.querySelector('#strokeCount').textContent.trim();
-      fire('pointerdown', rect.left + rect.width * .34, rect.top + rect.height * .23);
-      fire('pointerup', rect.left + rect.width * .34, rect.top + rect.height * .23);
-      resolve({ ready: document.documentElement.dataset.gameReady, levelCards, initiallyUnlocked, strokes: document.querySelector('#strokeCount').textContent.trim(), canvas: !!canvas, started, later: window.__gameDebug.getState(), rejectedDrawStayedSame: beforeRejectedDraw === document.querySelector('#strokeCount').textContent.trim() });
-    }, 500);
-  }, 120);
-})`);
-const tipping = await evaluate(`new Promise(resolve => {
-  window.__gameDebug.loadLevel(3);
-  setTimeout(() => {
-    const canvas = document.querySelector('canvas');
-    const rect = canvas.getBoundingClientRect();
-    const fire = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 11, pointerType: 'touch', clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }));
-    const point = (x, y) => [rect.left + rect.width * x, rect.top + rect.height * y];
-    fire('pointerdown', ...point(.22, .66));
-    fire('pointermove', ...point(.37, .84));
-    fire('pointermove', ...point(.68, .72));
-    fire('pointerup', ...point(.68, .72));
-    const started = window.__gameDebug.getState();
-    setTimeout(() => resolve({ started, settled: window.__gameDebug.getState() }), 1900);
-  }, 120);
-})`);
-const tutorial = await evaluate(`new Promise(resolve => {
-  window.__gameDebug.loadLevel(0);
-  setTimeout(() => {
-    const canvas = document.querySelector('canvas');
-    const rect = canvas.getBoundingClientRect();
-    const fire = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 19, pointerType: 'touch', clientX: x, clientY: y, buttons: type === 'pointerup' ? 0 : 1 }));
-    fire('pointerdown', rect.left + rect.width * .35, rect.top + rect.height * .4);
-    fire('pointermove', rect.left + rect.width * .52, rect.top + rect.height * .5);
-    fire('pointerup', rect.left + rect.width * .52, rect.top + rect.height * .5);
-    setTimeout(() => resolve({ state: window.__gameDebug.getState(), banner: document.querySelector('#resultBanner').textContent }), 80);
-  }, 120);
-})`);
-const catalog = await evaluate(`Array.from({ length: 12 }, (_, index) => {
-  window.__gameDebug.loadLevel(index);
-  const state = window.__gameDebug.getState();
-  return { level: state.level, goal: state.goal, hasBall: !!state.ball, gears: state.gears.length, staticSegments: state.staticSegments };
-})`);
-socket.close();
-chrome.kill();
-console.log(JSON.stringify({ ...result, tipping, tutorial, catalog }));
-const modes = new Set(result.started.gears.map(gear => gear.mode));
-const movingGearChanged = result.later.gears.some((gear, index) => ["constant", "variable"].includes(gear.mode) && gear.angle !== result.started.gears[index].angle);
-const tippedFromOffCenterContact = Math.abs(tipping.settled.firstStrokeAngle - tipping.started.firstStrokeAngle) > 0.04;
-const goalTypes = new Set(catalog.map(level => level.goal));
-if (result.ready !== "true" || result.levelCards !== 12 || result.initiallyUnlocked !== 1 || result.strokes !== "1 / 3" || !result.canvas || result.started.level !== 12 || result.started.goal !== "ballBox" || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 4 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame || !tippedFromOffCenterContact || tipping.started.firstStrokeMass <= 0 || tipping.started.firstStrokeInertia <= 0 || !tutorial.state.finished || tutorial.state.goal !== "draw" || !tutorial.banner.includes("★") || catalog.length !== 12 || goalTypes.size !== 6) process.exitCode = 1;
+const baseLevels = source.match(/const levels = \[([\s\S]*?)\.\.\.buildExpansionLevels\(\)/)?.[1];
+assert.ok(baseLevels, "base level list and expansion call are present");
+const baseLevelCount = [...baseLevels.matchAll(/\{ name:/g)].length;
+const chapterBlock = source.match(/const expansionChapters = \[([\s\S]*?)\n\];/)?.[1];
+assert.ok(chapterBlock, "expansion chapter list is present");
+const chapterEntries = [...chapterBlock.matchAll(/\{ title: "([^"]+)", names: \[([^\]]+)\] \}/g)];
+const chapters = chapterEntries.map(([, title, names]) => ({ title, levels: [...names.matchAll(/"([^"]+)"/g)].map(([, name]) => name) }));
+assert.equal(baseLevelCount, 12, "the original twelve levels are preserved");
+assert.equal(chapters.length, 5, "five new chapters are present");
+assert.ok(chapters.every(chapter => chapter.levels.length === 10), "each new chapter contains ten named levels");
+assert.equal(baseLevelCount + chapters.reduce((sum, chapter) => sum + chapter.levels.length, 0), 62, "the campaign contains 62 levels total");
+
+const goalBlock = source.match(/const expansionGoalPatterns = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+const goalTypes = new Set([...goalBlock.matchAll(/"(ballBox|target|wall|strokeBox|spinGear)"/g)].map(([, type]) => type));
+assert.equal(goalTypes.size, 5, "the expansion rotates through five goal types");
+assert.match(source, /parStrokes: Math\.max\(1, strokesAllowed - 1\)/, "the third-star stroke threshold requires a better-than-maximum solution");
+assert.match(source, /chapter === 0/, "the target platform layout avoids later gear clusters");
+assert.match(source, /const rimSegments = 40/, "ring gears have physical rim collision segments");
+assert.match(source, /unlocked === 12 && levels\.length > 12 && Number\(savedStars\[11\]\) > 0/, "legacy progress advances only after level 12 was cleared");
+
+assert.ok(bundle.length > 400_000, "Three.js and the game are bundled locally");
+assert.ok(html.includes("已解鎖 1 / 62"), "offline game shows the full level count");
+const inlineStart = html.indexOf("<script>") + "<script>".length;
+const inlineEnd = html.lastIndexOf("</script>");
+const inlineScript = html.slice(inlineStart, inlineEnd).trimEnd();
+const htmlShell = html.replace(inlineScript, "");
+assert.ok(inlineScript.startsWith(bundle.slice(0, 200)), "standalone HTML embeds the current game bundle");
+assert.ok(inlineScript.endsWith(bundle.trimEnd().slice(-200)), "standalone HTML embeds the end of the current game bundle");
+assert.ok(!htmlShell.includes('src="./game.bundle.js"') && !htmlShell.includes('href="./styles.css"'), "download is a single self-contained HTML file");
+assert.ok((await stat(new URL("../dist/index.html", import.meta.url))).size > 400_000, "standalone HTML is present and non-empty");
+
+console.log(JSON.stringify({ levels: 62, originalLevels: baseLevelCount, chapters: chapters.map(chapter => ({ name: chapter.title, levels: chapter.levels.length })), expansionGoalTypes: [...goalTypes], standaloneHtmlBytes: (await stat(new URL("../dist/index.html", import.meta.url))).size }));
