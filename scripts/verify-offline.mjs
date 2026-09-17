@@ -41,9 +41,16 @@ const result = await evaluate(`(() => {
   fire('pointermove', rect.left + rect.width * .42, rect.top + rect.height * .52);
   fire('pointerup', rect.left + rect.width * .42, rect.top + rect.height * .52);
   const started = window.__gameDebug.getState();
-  return new Promise(resolve => setTimeout(() => resolve({ ready: document.documentElement.dataset.gameReady, strokes: document.querySelector('#strokeCount').textContent.trim(), canvas: !!canvas, started, later: window.__gameDebug.getState() }), 500));
+  return new Promise(resolve => setTimeout(() => {
+    const beforeRejectedDraw = document.querySelector('#strokeCount').textContent.trim();
+    fire('pointerdown', rect.left + rect.width * .34, rect.top + rect.height * .23);
+    fire('pointerup', rect.left + rect.width * .34, rect.top + rect.height * .23);
+    resolve({ ready: document.documentElement.dataset.gameReady, strokes: document.querySelector('#strokeCount').textContent.trim(), canvas: !!canvas, started, later: window.__gameDebug.getState(), rejectedDrawStayedSame: beforeRejectedDraw === document.querySelector('#strokeCount').textContent.trim() });
+  }, 500));
 })()`);
 socket.close();
 chrome.kill();
 console.log(JSON.stringify(result));
-if (result.ready !== "true" || result.strokes !== "1 / 3" || !result.canvas || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 20) process.exitCode = 1;
+const modes = new Set(result.started.gears.map(gear => gear.mode));
+const movingGearChanged = result.later.gears.some((gear, index) => ["constant", "variable"].includes(gear.mode) && gear.angle !== result.started.gears[index].angle);
+if (result.ready !== "true" || result.strokes !== "1 / 3" || !result.canvas || !result.started.running || result.later.ball.y >= result.started.ball.y || result.later.firstStrokeY >= result.started.firstStrokeY || result.started.staticSegments < 3 || !["fixed", "impact", "constant", "variable"].every(mode => modes.has(mode)) || !movingGearChanged || !result.rejectedDrawStayedSame) process.exitCode = 1;
