@@ -10,11 +10,19 @@ const undoButton = document.querySelector("#undoButton");
 const dropButton = document.querySelector("#dropButton");
 const resetButton = document.querySelector("#resetButton");
 const hintDialog = document.querySelector("#hintDialog");
+const levelSelect = document.querySelector("#levelSelect");
+const gameApp = document.querySelector("#gameApp");
+const levelGrid = document.querySelector("#levelGrid");
+const progressText = document.querySelector("#progressText");
+const levelMenuButton = document.querySelector("#levelMenuButton");
+const missionText = document.querySelector("#missionText");
+const hintTitle = document.querySelector("#hintTitle");
+const hintBody = document.querySelector("#hintBody");
 
 const WORLD = { left: -5, right: 5, bottom: -7, top: 7 };
 const BALL_RADIUS = 0.28;
 const LINE_RADIUS = 0.075;
-const MAX_STROKES = 3;
+let maxStrokes = 3;
 const GRAVITY = 5.5;
 
 const scene = new THREE.Scene();
@@ -45,11 +53,33 @@ let startedAt = 0;
 let elapsed = 0;
 let accumulator = 0;
 let gearTime = 0;
+let currentLevelIndex = 0;
+let ballStart = new THREE.Vector2(-2.25, 5.55);
 
 const circleObstacles = [];
 const staticSegments = [];
 const gears = [];
-const basket = { left: 2.75, right: 4.05, bottom: -6.25, top: -5.08 };
+let basket = { left: 2.75, right: 4.05, bottom: -6.25, top: -5.08 };
+
+const levels = [
+  { name: "第一道斜坡", difficulty: 1, strokes: 2, mission: "畫一條路，讓球進盒子", hintTitle: "先從斜坡開始", hint: "畫一條由左上往右下的斜線，引導球滑向盒子。", ball: [-3.2, 5.3], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [] },
+  { name: "借牆轉彎", difficulty: 1, strokes: 2, mission: "利用牆壁改變球的方向", hintTitle: "牆壁也是工具", hint: "不一定要直接接住球，先讓它撞牆再回來。", ball: [2.8, 5.3], basket: [-3.9, -2.6, -6.2, -5.0], obstacles: [{ style: "cross", x: 0, y: -0.4, r: 0.65, mode: "fixed" }] },
+  { name: "繞過圓環", difficulty: 2, strokes: 2, mission: "避開障礙，把球送到底部", hintTitle: "分成兩段思考", hint: "第一筆改變方向，第二筆接住落下的球。", ball: [-2.8, 5.4], basket: [2.8, 4.1, -6.2, -5.0], obstacles: [{ style: "cross", x: -0.7, y: 1.5, r: 0.7, mode: "fixed" }, { style: "cross", x: 1.7, y: -1.2, r: 0.62, mode: "fixed" }] },
+  { name: "順著齒輪", difficulty: 2, strokes: 3, mission: "利用恆速齒輪推動球", hintTitle: "順著旋轉方向", hint: "讓球接觸齒輪外側的突齒，旋轉會帶著球走。", ball: [-3.3, 5.4], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [{ style: "wheel", x: -0.8, y: 1.8, r: 0.85, mode: "constant", speed: 0.9 }, { style: "cross", x: 2.1, y: -1.5, r: 0.62, mode: "fixed" }] },
+  { name: "喚醒轉盤", difficulty: 3, strokes: 3, mission: "撞動齒輪，再讓它推球", hintTitle: "先給它一點力量", hint: "碰撞驅動齒輪原本不動；用掉落的線或球撞它。", ball: [2.9, 5.4], basket: [-3.9, -2.6, -6.2, -5.0], obstacles: [{ style: "cross", x: 0.6, y: 2.1, r: 0.72, mode: "impact", damping: 0.75 }, { style: "cross", x: -1.8, y: -1.3, r: 0.62, mode: "fixed" }] },
+  { name: "逆流雙輪", difficulty: 3, strokes: 3, mission: "穿過兩個反向齒輪", hintTitle: "找出安全的一側", hint: "兩個齒輪方向相反，選擇能把球送向盒子的接觸面。", ball: [-3.4, 5.5], basket: [2.7, 4.0, -6.2, -5.0], obstacles: [{ style: "wheel", x: -1.4, y: 1.7, r: 0.78, mode: "constant", speed: 0.85 }, { style: "wheel", x: 1.5, y: -1.0, r: 0.82, mode: "constant", speed: -0.95 }] },
+  { name: "抓準節奏", difficulty: 4, strokes: 3, mission: "通過忽快忽慢的齒輪", hintTitle: "等待也是解法", hint: "變速齒輪會加速、減速甚至反轉；在合適時機完成第一筆。", ball: [0, 5.5], basket: [-0.65, 0.65, -6.2, -5.0], obstacles: [{ style: "wheel", x: -1.8, y: 1.5, r: 0.85, mode: "variable", baseSpeed: -0.45, amplitude: 1.1, frequency: 1.25 }, { style: "wheel", x: 1.8, y: -1.2, r: 0.85, mode: "variable", baseSpeed: 0.4, amplitude: 1.0, frequency: 0.9 }] },
+  { name: "齒輪工房", difficulty: 4, strokes: 3, mission: "穿越四種齒輪機關", hintTitle: "每種齒輪規則不同", hint: "固定、碰撞驅動、恆速與變速齒輪都在這裡；先觀察再下筆。", ball: [-3.2, 5.5], basket: [2.75, 4.05, -6.25, -5.08], obstacles: [{ style: "wheel", x: -2.2, y: 3.2, r: 0.75, mode: "variable", baseSpeed: -0.5, amplitude: 0.9, frequency: 1.1 }, { style: "cross", x: 1.5, y: 3.0, r: 0.62, mode: "impact", damping: 1.1 }, { style: "cross", x: -0.7, y: 0.2, r: 0.6, mode: "fixed" }, { style: "wheel", x: 2.0, y: -1.1, r: 0.8, mode: "constant", speed: 0.85 }, { style: "cross", x: -1.3, y: -2.7, r: 0.58, mode: "impact", damping: 0.8 }] }
+];
+
+function readUnlockedLevel() {
+  try { return Math.min(levels.length, Math.max(1, Number(localStorage.getItem("brain-physics-unlocked")) || 1)); }
+  catch (_) { return 1; }
+}
+
+function writeUnlockedLevel(value) {
+  try { localStorage.setItem("brain-physics-unlocked", String(value)); } catch (_) {}
+}
 
 function disc(x, y, radius, mat = white, z = 0) {
   const object = new THREE.Mesh(new THREE.CircleGeometry(radius, 48), mat);
@@ -130,19 +160,29 @@ function addCrossRing(x, y, radius, config) {
   registerGear(x, y, radius, group, localSegments, config);
 }
 
-function createScene() {
-  addWheel(-2.25, 3.75, 0.82, { mode: "variable", baseSpeed: -0.55, amplitude: 0.85, frequency: 1.2 });
-  addCrossRing(1.65, 3.45, 0.66, { mode: "impact", damping: 1.35 });
-  addCrossRing(-0.65, 0.55, 0.64, { mode: "fixed" });
-  addWheel(2.25, -0.5, 0.86, { mode: "constant", speed: 0.82 });
-  addCrossRing(-1.25, -2.45, 0.64, { mode: "impact", damping: 0.9 });
+function clearScene() {
+  gameRoot.traverse(object => { if (object.geometry) object.geometry.dispose(); });
+  gameRoot.clear();
+  circleObstacles.length = 0;
+  staticSegments.length = 0;
+  gears.length = 0;
+}
+
+function createScene(level) {
+  basket = { left: level.basket[0], right: level.basket[1], bottom: level.basket[2], top: level.basket[3] };
+  ballStart = new THREE.Vector2(level.ball[0], level.ball[1]);
+  level.obstacles.forEach(obstacle => {
+    const config = { mode: obstacle.mode, speed: obstacle.speed, baseSpeed: obstacle.baseSpeed, amplitude: obstacle.amplitude, frequency: obstacle.frequency, damping: obstacle.damping };
+    if (obstacle.style === "wheel") addWheel(obstacle.x, obstacle.y, obstacle.r, config);
+    else addCrossRing(obstacle.x, obstacle.y, obstacle.r, config);
+  });
   bar(basket.left, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
   bar(basket.right, (basket.bottom + basket.top) / 2, basket.top - basket.bottom, 0.12, Math.PI / 2, orange, true);
   bar((basket.left + basket.right) / 2, basket.bottom, basket.right - basket.left, 0.12, 0, orange, true);
-  disc(-2.25, 5.55, BALL_RADIUS + 0.09, orangeDark, -0.02);
-  ball = disc(-2.25, 5.55, BALL_RADIUS, orange, 0.2);
+  disc(ballStart.x, ballStart.y, BALL_RADIUS + 0.09, orangeDark, -0.02);
+  ball = disc(ballStart.x, ballStart.y, BALL_RADIUS, orange, 0.2);
   const halo = new THREE.Mesh(new THREE.RingGeometry(0.46, 0.5, 40), transparentWhite);
-  halo.position.set(-2.25, 5.55, 0);
+  halo.position.set(ballStart.x, ballStart.y, 0);
   gameRoot.add(halo);
 }
 
@@ -223,7 +263,7 @@ function addStrokeSegment(a, b) {
 }
 
 function beginStroke(event) {
-  if (finished || strokes.length >= MAX_STROKES || activePointerId !== null) return;
+  if (finished || strokes.length >= maxStrokes || activePointerId !== null) return;
   event.preventDefault();
   activePointerId = event.pointerId;
   try { renderer.domElement.setPointerCapture(event.pointerId); } catch (_) {}
@@ -281,7 +321,7 @@ function endStroke(event) {
   currentStroke = null;
   activePointerId = null;
   updateControls();
-  instructionEl.textContent = strokes.length < MAX_STROKES ? `球與線正在掉落，還可以畫 ${MAX_STROKES - strokes.length} 筆` : "三筆用完了，觀察物理結果";
+  instructionEl.textContent = strokes.length < maxStrokes ? `球與線正在掉落，還可以畫 ${maxStrokes - strokes.length} 筆` : "筆數用完了，觀察物理結果";
 }
 
 renderer.domElement.addEventListener("pointerdown", beginStroke, { passive: false });
@@ -291,7 +331,7 @@ renderer.domElement.addEventListener("pointercancel", endStroke, { passive: fals
 renderer.domElement.addEventListener("contextmenu", event => event.preventDefault());
 
 function updateControls() {
-  strokeCountEl.textContent = `${strokes.length} / ${MAX_STROKES}`;
+  strokeCountEl.textContent = `${strokes.length} / ${maxStrokes}`;
   undoButton.disabled = running || strokes.length === 0;
   dropButton.disabled = true;
 }
@@ -315,7 +355,7 @@ function resetGame() {
   activePointerId = null;
   if (currentStroke) currentStroke.meshes.forEach(mesh => drawingRoot.remove(mesh));
   currentStroke = null;
-  ball.position.set(-2.25, 5.55, 0.2);
+  ball.position.set(ballStart.x, ballStart.y, 0.2);
   ballVelocity.set(0, 0);
   gearTime = 0;
   gears.forEach(gear => {
@@ -534,21 +574,79 @@ function win() {
   if (finished) return;
   running = false;
   finished = true;
-  resultBanner.textContent = `過關！ ${elapsed.toFixed(1)} 秒完成`;
+  const unlocked = Math.max(readUnlockedLevel(), Math.min(levels.length, currentLevelIndex + 2));
+  writeUnlockedLevel(unlocked);
+  resultBanner.innerHTML = `<div>過關！ ${elapsed.toFixed(1)} 秒完成</div><div class="result-actions"><button data-result-action="levels">選關</button><button data-result-action="next">${currentLevelIndex === levels.length - 1 ? "完成" : "下一關"}</button></div>`;
   resultBanner.className = "result-banner success show";
   instructionEl.textContent = "漂亮的物理解法！";
   if (navigator.vibrate) navigator.vibrate([40, 40, 100]);
   updateControls();
 }
 
+function renderLevelSelect() {
+  const unlocked = readUnlockedLevel();
+  progressText.textContent = `已解鎖 ${unlocked} / ${levels.length}`;
+  levelGrid.innerHTML = levels.map((level, index) => {
+    const locked = index + 1 > unlocked;
+    return `<button class="level-card" data-level="${index}" ${locked ? "disabled" : ""}>
+      <span class="level-number">${String(index + 1).padStart(2, "0")}</span>
+      <span class="level-name">${level.name}</span>
+      <span class="level-meta"><span class="difficulty">${"●".repeat(level.difficulty)}${"○".repeat(4 - level.difficulty)}</span> · ${level.strokes} 筆</span>
+      ${locked ? '<span class="level-lock">🔒</span>' : ""}
+    </button>`;
+  }).join("");
+}
+
+function showLevelSelect() {
+  running = false;
+  finished = false;
+  gameApp.classList.add("hidden");
+  levelSelect.classList.remove("hidden");
+  renderLevelSelect();
+}
+
+function loadLevel(index) {
+  currentLevelIndex = index;
+  const level = levels[index];
+  running = false;
+  finished = false;
+  if (currentStroke) currentStroke.meshes.forEach(mesh => drawingRoot.remove(mesh));
+  currentStroke = null;
+  strokes.forEach(removeStroke);
+  strokes = [];
+  drawingRoot.clear();
+  clearScene();
+  maxStrokes = level.strokes;
+  createScene(level);
+  levelMenuButton.textContent = String(index + 1).padStart(2, "0");
+  missionText.textContent = level.mission;
+  hintTitle.textContent = level.hintTitle;
+  hintBody.textContent = level.hint;
+  levelSelect.classList.add("hidden");
+  gameApp.classList.remove("hidden");
+  resetGame();
+  requestAnimationFrame(resize);
+}
+
 undoButton.addEventListener("click", undoStroke);
 resetButton.addEventListener("click", resetGame);
+levelMenuButton.addEventListener("click", showLevelSelect);
+levelGrid.addEventListener("click", event => {
+  const button = event.target.closest("[data-level]");
+  if (button && !button.disabled) loadLevel(Number(button.dataset.level));
+});
+resultBanner.addEventListener("click", event => {
+  const action = event.target.closest("[data-result-action]")?.dataset.resultAction;
+  if (action === "levels" || currentLevelIndex === levels.length - 1) showLevelSelect();
+  if (action === "next" && currentLevelIndex < levels.length - 1) loadLevel(currentLevelIndex + 1);
+});
 document.querySelector("#hintButton").addEventListener("click", () => hintDialog.showModal());
 document.querySelector("#closeHint").addEventListener("click", () => hintDialog.close());
 document.querySelector("#gotItButton").addEventListener("click", () => hintDialog.close());
 
 function resize() {
   const rect = mount.getBoundingClientRect();
+  if (rect.width < 10 || rect.height < 10) return;
   renderer.setSize(rect.width, rect.height, false);
   const viewportAspect = rect.width / Math.max(rect.height, 1);
   const worldAspect = (WORLD.right - WORLD.left) / (WORLD.top - WORLD.bottom);
@@ -595,26 +693,26 @@ if (modelContext?.registerTool) {
       description: "清除玩家畫的路線並把橘球放回起點。",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
       annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute() { resetGame(); return { status: "ready", strokes: 0 }; }
+      execute() { if (!ball) loadLevel(currentLevelIndex); else resetGame(); return { status: "ready", strokes: 0 }; }
     })).catch(() => {});
   } catch (_) {}
 }
 
 window.__gameDebug = {
+  loadLevel,
   getState() {
     return {
       running,
       strokes: strokes.length,
       staticSegments: staticSegments.length,
       gears: gears.map(gear => ({ mode: gear.mode, angle: gear.group.rotation.z, speed: gear.angularVelocity })),
-      ball: { x: ball.position.x, y: ball.position.y },
+      level: currentLevelIndex + 1,
+      ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
       firstStrokeY: strokes[0]?.group.position.y ?? null
     };
   }
 };
 
-createScene();
-resize();
-resetGame();
+renderLevelSelect();
 animate();
 document.documentElement.dataset.gameReady = "true";

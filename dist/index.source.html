@@ -9,10 +9,19 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="game-app">
+    <section id="levelSelect" class="level-select">
+      <header class="select-header">
+        <p>腦洞物理室</p>
+        <h1>選擇關卡</h1>
+        <span id="progressText">已解鎖 1 / 8</span>
+      </header>
+      <div id="levelGrid" class="level-grid" aria-label="關卡選擇"></div>
+      <p class="select-tip">完成關卡即可解鎖下一題，每一題都有不只一種解法。</p>
+    </section>
+    <main id="gameApp" class="game-app hidden">
       <header class="hud">
-        <div class="level-badge" aria-label="目前關卡">01</div>
-        <div class="mission"><span class="orange-dot" aria-hidden="true"></span><h1>把球放在橘色盒子裡</h1></div>
+        <button id="levelMenuButton" class="level-badge" aria-label="返回選關">01</button>
+        <div class="mission"><span class="orange-dot" aria-hidden="true"></span><h1 id="missionText">把球放在橘色盒子裡</h1></div>
         <button id="hintButton" class="round-button" aria-label="提示">💡</button>
       </header>
       <section class="status-row" aria-label="遊戲狀態">
@@ -32,8 +41,8 @@
     </main>
     <dialog id="hintDialog" class="hint-dialog">
       <button id="closeHint" class="dialog-close" aria-label="關閉">×</button>
-      <div class="hint-icon">💡</div><h2>線條也有重量</h2>
-      <p>放開第一筆時，球和線會一起開始掉落。利用障礙物與牆壁改變它們的方向。</p>
+      <div class="hint-icon">💡</div><h2 id="hintTitle">線條也有重量</h2>
+      <p id="hintBody">放開第一筆時，球和線會一起開始掉落。利用障礙物與牆壁改變它們的方向。</p>
       <button id="gotItButton">知道了</button>
     </dialog>
     <script defer src="./game.bundle.js"></script>
