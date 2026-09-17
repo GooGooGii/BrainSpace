@@ -3,56 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-    <meta name="theme-color" content="#4f46e5" />
-    <meta name="description" content="一款使用 three.js 製作的手機腦洞解謎小遊戲。" />
-    <title>腦洞一下</title>
+    <meta name="theme-color" content="#7591bf" />
+    <meta name="description" content="用手指畫出路線，讓橘球落進橘色盒子的 three.js 物理解謎遊戲。" />
+    <title>腦洞物理室</title>
     <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
-    <main class="game-shell">
-      <header class="topbar">
-        <button id="homeButton" class="icon-button" aria-label="重新開始">↻</button>
-        <div class="progress-wrap" aria-label="關卡進度">
-          <span id="levelLabel">第 1 關</span>
-          <div class="progress-track"><div id="progressBar" class="progress-bar"></div></div>
-        </div>
-        <button id="hintButton" class="icon-button hint-button" aria-label="顯示提示">?</button>
+    <main class="game-app">
+      <header class="hud">
+        <div class="level-badge" aria-label="目前關卡">01</div>
+        <div class="mission"><span class="orange-dot" aria-hidden="true"></span><h1>把球放在橘色盒子裡</h1></div>
+        <button id="hintButton" class="round-button" aria-label="提示">💡</button>
       </header>
-
-      <section class="prompt-card">
-        <p class="eyebrow">想想看，不一定要照規則來</p>
-        <h1 id="question">把月亮移走，叫醒太陽</h1>
+      <section class="status-row" aria-label="遊戲狀態">
+        <div class="status-item"><span>⏱</span><strong id="timer">0.0</strong><small>秒</small></div>
+        <div class="status-item"><span>✎</span><strong id="strokeCount">0 / 3</strong><small>畫線</small></div>
+        <p id="instruction">用手指在深色區域畫出路線</p>
       </section>
-
-      <section id="gameStage" class="game-stage" aria-label="3D 遊戲區">
+      <section id="gameBoard" class="game-board" aria-label="物理解謎遊戲區">
         <div id="canvasMount" class="canvas-mount"></div>
-        <div class="stage-note" id="stageNote">拖曳畫面中的物件</div>
-        <div id="successBurst" class="success-burst" aria-hidden="true">答對了！</div>
+        <div id="resultBanner" class="result-banner" aria-live="polite"></div>
       </section>
-
-      <footer class="bottom-bar">
-        <div class="level-dots" id="levelDots" aria-label="關卡列表"></div>
-        <button id="nextButton" class="next-button" disabled>下一關 <span>→</span></button>
+      <footer class="controls">
+        <button id="undoButton" class="control-button secondary" disabled><span>↶</span>上一步</button>
+        <button id="dropButton" class="control-button primary" disabled><span>●</span>開始落下</button>
+        <button id="resetButton" class="control-button secondary"><span>↻</span>重新開始</button>
       </footer>
     </main>
-
     <dialog id="hintDialog" class="hint-dialog">
-      <button id="closeHint" class="dialog-close" aria-label="關閉提示">×</button>
-      <div class="bulb">💡</div>
-      <p class="hint-kicker">小提示</p>
-      <h2 id="hintText">有些東西只是擋住了視線。</h2>
-      <button id="gotItButton" class="got-it-button">我再試試</button>
+      <button id="closeHint" class="dialog-close" aria-label="關閉">×</button>
+      <div class="hint-icon">💡</div><h2>別直接畫到盒子</h2>
+      <p>利用斜坡改變球的方向，避開白色障礙物。最多可以畫三筆。</p>
+      <button id="gotItButton">知道了</button>
     </dialog>
-
-    <dialog id="finishDialog" class="finish-dialog">
-      <div class="trophy">🏆</div>
-      <p class="hint-kicker">全部破解</p>
-      <h2>你的腦洞比畫面還大！</h2>
-      <p>三個關卡都完成了。</p>
-      <button id="playAgainButton" class="got-it-button">再玩一次</button>
-    </dialog>
-
     <script type="module" src="./app.js"></script>
   </body>
 </html>

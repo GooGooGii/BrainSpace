@@ -1,277 +1,39 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js";
 
-const mount = document.querySelector("#canvasMount");
-const question = document.querySelector("#question");
-const levelLabel = document.querySelector("#levelLabel");
-const progressBar = document.querySelector("#progressBar");
-const levelDots = document.querySelector("#levelDots");
-const stageNote = document.querySelector("#stageNote");
-const nextButton = document.querySelector("#nextButton");
-const successBurst = document.querySelector("#successBurst");
-const hintDialog = document.querySelector("#hintDialog");
-const finishDialog = document.querySelector("#finishDialog");
-const hintText = document.querySelector("#hintText");
+const mount=document.querySelector("#canvasMount"),board=document.querySelector("#gameBoard"),timerEl=document.querySelector("#timer"),strokeCountEl=document.querySelector("#strokeCount"),instructionEl=document.querySelector("#instruction"),resultBanner=document.querySelector("#resultBanner"),undoButton=document.querySelector("#undoButton"),dropButton=document.querySelector("#dropButton"),resetButton=document.querySelector("#resetButton"),hintDialog=document.querySelector("#hintDialog");
+const WORLD={left:-5,right:5,bottom:-7,top:7},BALL_RADIUS=.28,MAX_STROKES=3;
+const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(WORLD.left,WORLD.right,WORLD.top,WORLD.bottom,.1,30),renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+camera.position.z=10;renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.outputColorSpace=THREE.SRGBColorSpace;mount.appendChild(renderer.domElement);
+const gameRoot=new THREE.Group(),drawingRoot=new THREE.Group();scene.add(gameRoot,drawingRoot);
+const white=new THREE.MeshBasicMaterial({color:0xf8f5eb}),orange=new THREE.MeshBasicMaterial({color:0xff9f1c}),orangeDark=new THREE.MeshBasicMaterial({color:0xcc6c00}),transparentWhite=new THREE.MeshBasicMaterial({color:0xf8f5eb,transparent:true,opacity:.22});
+let ball,ballVelocity=new THREE.Vector2(),strokes=[],currentStroke=null,activePointerId=null,running=false,finished=false,startedAt=0,elapsed=0,accumulator=0;
+const circleObstacles=[{x:-2.25,y:3.75,r:.82},{x:1.65,y:3.45,r:.66},{x:-.65,y:.55,r:.64},{x:2.25,y:-.5,r:.86},{x:-1.25,y:-2.45,r:.64}],basket={left:2.75,right:4.05,bottom:-6.25,top:-5.08};
 
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
-camera.position.set(0, 0.5, 11);
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-mount.appendChild(renderer.domElement);
-
-scene.add(new THREE.HemisphereLight(0xffffff, 0x4e6c47, 2.4));
-const keyLight = new THREE.DirectionalLight(0xffffff, 2.6);
-keyLight.position.set(-4, 6, 8);
-keyLight.castShadow = true;
-scene.add(keyLight);
-
-const raycaster = new THREE.Raycaster();
-const pointer = new THREE.Vector2();
-const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
-const hitPoint = new THREE.Vector3();
-let level = 0;
-let solved = false;
-let dragging = null;
-let interactives = [];
-let animated = [];
-let levelRoot = new THREE.Group();
-scene.add(levelRoot);
-
-const levels = [
-  { question: "把月亮移走，叫醒太陽", hint: "月亮只是擋住了太陽，把它拖到畫面外。", note: "拖曳月亮" },
-  { question: "讓小球進洞", hint: "球很固執，但洞沒有說它不能移動。", note: "不能移動的，也許不是唯一選擇" },
-  { question: "把大方塊放進小盒子", hint: "兩根手指可以改變東西的大小。", note: "試試兩根手指" }
-];
-
-function material(color, roughness = .55) {
-  return new THREE.MeshStandardMaterial({ color, roughness, metalness: .03 });
-}
-
-function mesh(geometry, color) {
-  const object = new THREE.Mesh(geometry, material(color));
-  object.castShadow = true;
-  object.receiveShadow = true;
-  return object;
-}
-
-function clearLevel() {
-  dragging = null; interactives = []; animated = [];
-  while (levelRoot.children.length) {
-    const child = levelRoot.children.pop();
-    child.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
-  }
-}
-
-function addGround(color = 0x7bd98e) {
-  const ground = mesh(new THREE.BoxGeometry(11, .45, 2.8), color);
-  ground.position.set(0, -3.35, -1.3);
-  levelRoot.add(ground);
-}
-
-function buildMoonLevel() {
-  addGround();
-  const sun = mesh(new THREE.SphereGeometry(1.12, 40, 40), 0xffd43b);
-  sun.position.set(0, .55, -1);
-  sun.userData.baseY = sun.position.y;
-  levelRoot.add(sun); animated.push({ object: sun, type: "float", speed: 1.4, amount: .1 });
-
-  for (let i = 0; i < 12; i++) {
-    const ray = mesh(new THREE.BoxGeometry(.18, .62, .12), 0xffd43b);
-    const a = (i / 12) * Math.PI * 2;
-    ray.position.set(Math.cos(a) * 1.55, .55 + Math.sin(a) * 1.55, -1.05);
-    ray.rotation.z = a - Math.PI / 2;
-    levelRoot.add(ray);
-  }
-
-  const moon = mesh(new THREE.SphereGeometry(1.45, 40, 40), 0x59617b);
-  moon.position.set(0, .55, .15);
-  moon.userData = { draggable: true, kind: "moon" };
-  levelRoot.add(moon); interactives.push(moon);
-  const craterMat = material(0x444b63);
-  [[-.45,.55],[.48,.2],[-.15,-.5]].forEach(([x,y], i) => {
-    const c = new THREE.Mesh(new THREE.CircleGeometry(.18 + i*.04, 24), craterMat);
-    c.position.set(x, y + .55, 1.58);
-    levelRoot.add(c);
-  });
-}
-
-function buildHoleLevel() {
-  addGround(0x65cf80);
-  const ball = mesh(new THREE.SphereGeometry(.65, 36, 36), 0xff6b9e);
-  ball.position.set(-2.1, -.45, .1);
-  levelRoot.add(ball); animated.push({ object: ball, type: "bounce", base: -.45 });
-
-  const hole = mesh(new THREE.TorusGeometry(.92, .2, 20, 48), 0x18172d);
-  hole.position.set(2.1, -2.5, .12);
-  hole.scale.y = .42;
-  hole.userData = { draggable: true, kind: "hole" };
-  levelRoot.add(hole); interactives.push(hole);
-
-  const arrow = mesh(new THREE.ConeGeometry(.24, .7, 3), 0xffd43b);
-  arrow.position.set(2.1, -1.25, .2); arrow.rotation.z = Math.PI;
-  levelRoot.add(arrow); animated.push({ object: arrow, type: "bob", base: -1.25 });
-}
-
-function buildBoxLevel() {
-  addGround(0x82d89a);
-  const box = mesh(new THREE.BoxGeometry(2.3, 2.3, 2.3, 2, 2, 2), 0x4f46e5);
-  box.position.set(-1.8, -.5, .1);
-  box.rotation.set(.18, .35, .08);
-  box.userData = { draggable: true, kind: "cube", scalable: true };
-  levelRoot.add(box); interactives.push(box);
-
-  const target = mesh(new THREE.BoxGeometry(1.7, .7, 1.4), 0xffd43b);
-  target.position.set(2, -2.25, -.1);
-  levelRoot.add(target);
-  const cavity = mesh(new THREE.BoxGeometry(1.2, .16, .9), 0x3b3192);
-  cavity.position.set(2, -1.84, .62);
-  levelRoot.add(cavity);
-}
-
-function buildLevel() {
-  clearLevel(); solved = false; nextButton.disabled = true;
-  successBurst.classList.remove("show");
-  question.textContent = levels[level].question;
-  levelLabel.textContent = `第 ${level + 1} 關`;
-  stageNote.textContent = levels[level].note;
-  progressBar.style.width = `${((level + 1) / levels.length) * 100}%`;
-  levelDots.innerHTML = levels.map((_, i) => `<span class="level-dot ${i === level ? "active" : ""} ${i < level ? "done" : ""}"></span>`).join("");
-  [buildMoonLevel, buildHoleLevel, buildBoxLevel][level]();
-}
-
-function solve() {
-  if (solved) return;
-  solved = true; dragging = null;
-  nextButton.disabled = false;
-  stageNote.textContent = "太棒了，你找到不一樣的解法！";
-  successBurst.classList.remove("show");
-  void successBurst.offsetWidth;
-  successBurst.classList.add("show");
-  if (navigator.vibrate) navigator.vibrate([35, 30, 70]);
-}
-
-function pointerToWorld(event) {
-  const rect = renderer.domElement.getBoundingClientRect();
-  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  raycaster.setFromCamera(pointer, camera);
-  raycaster.ray.intersectPlane(plane, hitPoint);
-  return hitPoint;
-}
-
-renderer.domElement.addEventListener("pointerdown", event => {
-  if (solved || event.pointerType === "touch" && activeTouches.size > 0) return;
-  renderer.domElement.setPointerCapture(event.pointerId);
-  pointerToWorld(event);
-  const hits = raycaster.intersectObjects(interactives, false);
-  if (hits.length) dragging = hits[0].object;
-});
-
-renderer.domElement.addEventListener("pointermove", event => {
-  if (!dragging || solved || activeTouches.size > 1) return;
-  const p = pointerToWorld(event);
-  dragging.position.x = THREE.MathUtils.clamp(p.x, -5.5, 5.5);
-  dragging.position.y = THREE.MathUtils.clamp(p.y, -3, 4);
-  if (dragging.userData.kind === "moon" && (Math.abs(dragging.position.x) > 3.5 || Math.abs(dragging.position.y) > 3.1)) solve();
-  if (dragging.userData.kind === "hole" && dragging.position.distanceTo(new THREE.Vector3(-2.1, -.45, .1)) < 1) solve();
-  if (dragging.userData.kind === "cube" && dragging.scale.x < .58 && dragging.position.distanceTo(new THREE.Vector3(2, -1.45, .1)) < 1.1) solve();
-});
-
-renderer.domElement.addEventListener("pointerup", () => { dragging = null; });
-renderer.domElement.addEventListener("pointercancel", () => { dragging = null; });
-
-const activeTouches = new Map();
-let pinchStart = 0;
-let pinchScale = 1;
-renderer.domElement.addEventListener("touchstart", event => {
-  [...event.changedTouches].forEach(t => activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY }));
-  if (level === 2 && activeTouches.size === 2) {
-    const [a,b] = [...activeTouches.values()];
-    pinchStart = Math.hypot(a.x-b.x, a.y-b.y);
-    pinchScale = interactives[0]?.scale.x || 1;
-    dragging = interactives[0];
-  }
-}, { passive: true });
-
-renderer.domElement.addEventListener("touchmove", event => {
-  [...event.changedTouches].forEach(t => activeTouches.set(t.identifier, { x: t.clientX, y: t.clientY }));
-  if (level === 2 && activeTouches.size === 2 && interactives[0]) {
-    const [a,b] = [...activeTouches.values()];
-    const distance = Math.hypot(a.x-b.x, a.y-b.y);
-    const next = THREE.MathUtils.clamp(pinchScale * distance / pinchStart, .38, 1.1);
-    interactives[0].scale.setScalar(next);
-    stageNote.textContent = next < .6 ? "現在它放得進去了！" : "繼續縮小一點";
-  }
-}, { passive: true });
-
-renderer.domElement.addEventListener("touchend", event => {
-  [...event.changedTouches].forEach(t => activeTouches.delete(t.identifier));
-  if (activeTouches.size < 2) dragging = null;
-}, { passive: true });
-
-document.querySelector("#hintButton").addEventListener("click", () => { hintText.textContent = levels[level].hint; hintDialog.showModal(); });
-document.querySelector("#closeHint").addEventListener("click", () => hintDialog.close());
-document.querySelector("#gotItButton").addEventListener("click", () => hintDialog.close());
-document.querySelector("#homeButton").addEventListener("click", buildLevel);
-document.querySelector("#playAgainButton").addEventListener("click", () => { finishDialog.close(); level = 0; buildLevel(); });
-nextButton.addEventListener("click", () => {
-  if (!solved) return;
-  if (level === levels.length - 1) finishDialog.showModal();
-  else { level += 1; buildLevel(); }
-});
-
-const modelContext = document.modelContext;
-if (modelContext?.registerTool) {
-  const lifecycle = new AbortController();
-  try {
-    void Promise.resolve(modelContext.registerTool({
-      name: "start_game_level",
-      title: "開始指定關卡",
-      description: "切換到腦洞一下的指定關卡，並重設該關卡的遊戲狀態。",
-      inputSchema: {
-        type: "object",
-        properties: { level: { type: "integer", minimum: 1, maximum: levels.length } },
-        required: ["level"],
-        additionalProperties: false
-      },
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute(input) {
-        if (!Number.isInteger(input?.level) || input.level < 1 || input.level > levels.length) {
-          throw new Error(`level 必須是 1 到 ${levels.length} 的整數`);
-        }
-        level = input.level - 1;
-        buildLevel();
-        return { level: input.level, question: levels[level].question, status: "ready" };
-      }
-    }, { signal: lifecycle.signal })).catch(() => {});
-  } catch (_) {
-    // Browsers without a complete WebMCP implementation continue normally.
-  }
-}
-
-function resize() {
-  const rect = mount.getBoundingClientRect();
-  renderer.setSize(rect.width, rect.height, false);
-  camera.aspect = rect.width / Math.max(rect.height, 1);
-  camera.updateProjectionMatrix();
-}
-new ResizeObserver(resize).observe(mount);
-
-const clock = new THREE.Clock();
-function render() {
-  const t = clock.getElapsedTime();
-  animated.forEach(item => {
-    if (item.type === "float") item.object.position.y = item.object.userData.baseY + Math.sin(t * item.speed) * item.amount;
-    if (item.type === "bounce") item.object.position.y = item.base + Math.abs(Math.sin(t * 2.3)) * .2;
-    if (item.type === "bob") item.object.position.y = item.base + Math.sin(t * 3) * .13;
-  });
-  renderer.render(scene, camera);
-  requestAnimationFrame(render);
-}
-
-buildLevel();
-resize();
-render();
+function disc(x,y,r,mat=white,z=0){const o=new THREE.Mesh(new THREE.CircleGeometry(r,48),mat);o.position.set(x,y,z);gameRoot.add(o);return o}
+function ring(x,y,outer,inner){const o=new THREE.Mesh(new THREE.RingGeometry(inner,outer,48),white);o.position.set(x,y,0);gameRoot.add(o);return o}
+function bar(x,y,length,thickness,rotation=0,mat=white,root=gameRoot){const o=new THREE.Mesh(new THREE.BoxGeometry(length,thickness,.04),mat);o.position.set(x,y,0);o.rotation.z=rotation;root.add(o);return o}
+function addWheel(x,y,r){disc(x,y,r);for(let i=0;i<10;i++){const a=i/10*Math.PI*2;bar(x+Math.cos(a)*(r+.23),y+Math.sin(a)*(r+.23),.48,.11,a)}}
+function addCrossRing(x,y,r){ring(x,y,r,r*.55);bar(x,y,r*2.7,.09);bar(x,y,r*2.7,.09,Math.PI/2)}
+function createScene(){addWheel(-2.25,3.75,.82);addCrossRing(1.65,3.45,.66);addCrossRing(-.65,.55,.64);addWheel(2.25,-.5,.86);addCrossRing(-1.25,-2.45,.64);bar(basket.left,(basket.bottom+basket.top)/2,basket.top-basket.bottom,.12,Math.PI/2,orange);bar(basket.right,(basket.bottom+basket.top)/2,basket.top-basket.bottom,.12,Math.PI/2,orange);bar((basket.left+basket.right)/2,basket.bottom,basket.right-basket.left,.12,0,orange);disc(-2.25,5.55,BALL_RADIUS+.09,orangeDark,-.02);ball=disc(-2.25,5.55,BALL_RADIUS,orange,.2);const halo=new THREE.Mesh(new THREE.RingGeometry(.46,.5,40),transparentWhite);halo.position.set(-2.25,5.55,0);gameRoot.add(halo)}
+function worldPoint(e){const r=renderer.domElement.getBoundingClientRect();return new THREE.Vector2(camera.left+(e.clientX-r.left)/r.width*(camera.right-camera.left),camera.top-(e.clientY-r.top)/r.height*(camera.top-camera.bottom))}
+function validPoint(p){return p.x>WORLD.left+.18&&p.x<WORLD.right-.18&&p.y>WORLD.bottom+.18&&p.y<WORLD.top-.18}
+function addStrokeSegment(a,b){const d=b.clone().sub(a),length=d.length();if(length<.01)return null;const o=new THREE.Mesh(new THREE.BoxGeometry(length,.13,.08),white);o.position.set((a.x+b.x)/2,(a.y+b.y)/2,.12);o.rotation.z=Math.atan2(d.y,d.x);drawingRoot.add(o);return o}
+function beginStroke(e){if(running||finished||strokes.length>=MAX_STROKES||activePointerId!==null)return;e.preventDefault();activePointerId=e.pointerId;renderer.domElement.setPointerCapture(e.pointerId);const p=worldPoint(e);if(!validPoint(p)){activePointerId=null;return}currentStroke={points:[p],meshes:[]};instructionEl.textContent="繼續拖動，放開手指就完成這一筆"}
+function moveStroke(e){if(e.pointerId!==activePointerId||!currentStroke)return;e.preventDefault();const p=worldPoint(e);if(!validPoint(p))return;const last=currentStroke.points.at(-1);if(p.distanceTo(last)<.11)return;const segment=addStrokeSegment(last,p);if(segment)currentStroke.meshes.push(segment);currentStroke.points.push(p)}
+function endStroke(e){if(e.pointerId!==activePointerId)return;e.preventDefault();if(currentStroke&&currentStroke.points.length>1)strokes.push(currentStroke);else currentStroke?.meshes.forEach(m=>drawingRoot.remove(m));currentStroke=null;activePointerId=null;updateControls();instructionEl.textContent=strokes.length<MAX_STROKES?"可以繼續畫，或讓球開始落下":"三筆用完了，讓球開始落下吧"}
+renderer.domElement.addEventListener("pointerdown",beginStroke,{passive:false});renderer.domElement.addEventListener("pointermove",moveStroke,{passive:false});renderer.domElement.addEventListener("pointerup",endStroke,{passive:false});renderer.domElement.addEventListener("pointercancel",endStroke,{passive:false});renderer.domElement.addEventListener("contextmenu",e=>e.preventDefault());
+function updateControls(){strokeCountEl.textContent=`${strokes.length} / ${MAX_STROKES}`;undoButton.disabled=running||strokes.length===0;dropButton.disabled=running||finished||strokes.length===0}
+function undoStroke(){if(running||!strokes.length)return;const s=strokes.pop();s.meshes.forEach(m=>{drawingRoot.remove(m);m.geometry.dispose()});updateControls();instructionEl.textContent="已取消上一筆，繼續畫路線"}
+function resetGame(){running=false;finished=false;elapsed=0;accumulator=0;activePointerId=null;currentStroke=null;ball.position.set(-2.25,5.55,.2);ballVelocity.set(0,0);strokes.flatMap(s=>s.meshes).forEach(m=>{drawingRoot.remove(m);m.geometry.dispose()});strokes=[];timerEl.textContent="0.0";resultBanner.className="result-banner";resultBanner.textContent="";instructionEl.textContent="用手指在深色區域畫出路線";updateControls()}
+function startDrop(){if(running||finished||strokes.length===0)return;running=true;startedAt=performance.now()-elapsed*1000;ballVelocity.set(.08,0);instructionEl.textContent="球正在掉落…";updateControls()}
+function closestPoint(p,a,b){const ab=b.clone().sub(a),ls=ab.lengthSq();if(!ls)return a.clone();const t=THREE.MathUtils.clamp(p.clone().sub(a).dot(ab)/ls,0,1);return a.clone().addScaledVector(ab,t)}
+function collideSegment(a,b,bounce=.42){const p=new THREE.Vector2(ball.position.x,ball.position.y),c=closestPoint(p,a,b),d=p.clone().sub(c),min=BALL_RADIUS+.065,dist=d.length();if(dist>=min||dist===0)return;const n=d.multiplyScalar(1/dist);p.addScaledVector(n,min-dist);ball.position.x=p.x;ball.position.y=p.y;const into=ballVelocity.dot(n);if(into<0)ballVelocity.addScaledVector(n,-(1+bounce)*into);ballVelocity.multiplyScalar(.992)}
+function collideCircle(o){const d=new THREE.Vector2(ball.position.x-o.x,ball.position.y-o.y),min=BALL_RADIUS+o.r,dist=d.length();if(dist>=min||dist===0)return;const n=d.multiplyScalar(1/dist);ball.position.x=o.x+n.x*min;ball.position.y=o.y+n.y*min;const into=ballVelocity.dot(n);if(into<0)ballVelocity.addScaledVector(n,-1.48*into)}
+function physicsStep(dt){ballVelocity.y-=5.5*dt;ballVelocity.multiplyScalar(.999);ball.position.x+=ballVelocity.x*dt;ball.position.y+=ballVelocity.y*dt;circleObstacles.forEach(collideCircle);strokes.forEach(s=>{for(let i=1;i<s.points.length;i++)collideSegment(s.points[i-1],s.points[i])});collideSegment(new THREE.Vector2(basket.left,basket.bottom),new THREE.Vector2(basket.left,basket.top),.25);collideSegment(new THREE.Vector2(basket.right,basket.bottom),new THREE.Vector2(basket.right,basket.top),.25);collideSegment(new THREE.Vector2(basket.left,basket.bottom),new THREE.Vector2(basket.right,basket.bottom),.18);if(ball.position.x>basket.left+BALL_RADIUS&&ball.position.x<basket.right-BALL_RADIUS&&ball.position.y<basket.top&&ball.position.y>basket.bottom)win();if(ball.position.y<WORLD.bottom-1||ball.position.x<WORLD.left-1||ball.position.x>WORLD.right+1)fail()}
+function win(){if(finished)return;running=false;finished=true;resultBanner.textContent=`過關！ ${elapsed.toFixed(1)} 秒完成`;resultBanner.className="result-banner success show";instructionEl.textContent="漂亮的路線！";if(navigator.vibrate)navigator.vibrate([40,40,100]);updateControls()}
+function fail(){if(finished)return;running=false;finished=true;resultBanner.textContent="差一點！按重新開始再試一次";resultBanner.className="result-banner show";instructionEl.textContent="調整路線後再挑戰";updateControls()}
+undoButton.addEventListener("click",undoStroke);dropButton.addEventListener("click",startDrop);resetButton.addEventListener("click",resetGame);document.querySelector("#hintButton").addEventListener("click",()=>hintDialog.showModal());document.querySelector("#closeHint").addEventListener("click",()=>hintDialog.close());document.querySelector("#gotItButton").addEventListener("click",()=>hintDialog.close());
+function resize(){const r=mount.getBoundingClientRect();renderer.setSize(r.width,r.height,false);const va=r.width/Math.max(r.height,1),wa=(WORLD.right-WORLD.left)/(WORLD.top-WORLD.bottom);if(va>wa){const width=(WORLD.top-WORLD.bottom)*va;camera.left=-width/2;camera.right=width/2;camera.top=WORLD.top;camera.bottom=WORLD.bottom}else{const height=(WORLD.right-WORLD.left)/va;camera.left=WORLD.left;camera.right=WORLD.right;camera.top=height/2;camera.bottom=-height/2}camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(board);const clock=new THREE.Clock();function animate(){const d=Math.min(clock.getDelta(),.05);if(running){elapsed=(performance.now()-startedAt)/1000;timerEl.textContent=elapsed.toFixed(1);accumulator+=d;while(accumulator>=1/120){physicsStep(1/120);accumulator-=1/120}}renderer.render(scene,camera);requestAnimationFrame(animate)}
+const modelContext=document.modelContext;if(modelContext?.registerTool){try{void Promise.resolve(modelContext.registerTool({name:"reset_physics_puzzle",title:"重設物理解謎",description:"清除玩家畫的路線並把橘球放回起點。",inputSchema:{type:"object",properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(){resetGame();return{status:"ready",strokes:0}}})).catch(()=>{})}catch(_){}}
+createScene();resize();resetGame();animate();
