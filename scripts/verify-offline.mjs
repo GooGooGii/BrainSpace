@@ -31,8 +31,10 @@ const inlineStart = html.indexOf("<script>") + "<script>".length;
 const inlineEnd = html.lastIndexOf("</script>");
 const inlineScript = html.slice(inlineStart, inlineEnd).trimEnd();
 const htmlShell = html.replace(inlineScript, "");
-assert.ok(inlineScript.startsWith(bundle.slice(0, 200)), "standalone HTML embeds the current game bundle");
-assert.ok(inlineScript.endsWith(bundle.trimEnd().slice(-200)), "standalone HTML embeds the end of the current game bundle");
+const escapedBundle = bundle.replace(/<\/script/gi, "<\\/script").trimEnd();
+assert.equal((html.match(/<\/script/gi) ?? []).length, 1, "standalone HTML has exactly one real closing script tag");
+assert.ok(inlineScript.startsWith(escapedBundle.slice(0, 200)), "standalone HTML embeds the current game bundle");
+assert.ok(inlineScript.endsWith(escapedBundle.slice(-200)), "standalone HTML embeds the end of the current game bundle");
 assert.ok(!htmlShell.includes('src="./game.bundle.js"') && !htmlShell.includes('href="./styles.css"'), "download is a single self-contained HTML file");
 assert.ok((await stat(new URL("../dist/index.html", import.meta.url))).size > 400_000, "standalone HTML is present and non-empty");
 
