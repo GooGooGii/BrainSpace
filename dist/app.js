@@ -62,6 +62,7 @@ let ballStart = new THREE.Vector2(-2.25, 5.55);
 const circleObstacles = [];
 const staticSegments = [];
 const gears = [];
+const dynamicBodies = [];
 let basket = null;
 let target = null;
 let checkpointHits = new Set();
@@ -89,6 +90,7 @@ const strokeCupBoard = (cupX, cupY, extra = {}) => ({ ...extra, basket: cupAt(cu
 const groundBoard = (ball, minX, maxX, extra = {}) => ({ ...extra, ball, goal: { type: "ground", minX, maxX } });
 const routeBoard = (ball, targets, extra = {}) => ({ ...extra, ball, goal: { type: "checkpoints", targets: targets.map(([x, y, r = 0.5]) => ({ x, y, r })) } });
 const spinBoard = (gear, speed, extra = {}) => ({ ...extra, goal: { type: "spinGear", speed }, obstacles: [gear, ...(extra.obstacles ?? [])] });
+const dynamicBar = (x, y, length, rotation = 0, mass = 1) => ({ x, y, length, rotation, mass });
 
 // Authored board recipes: each entry changes the start, route, landing zone, or
 // machine layout. Mechanics are introduced, then recombined in later chapters.
@@ -158,42 +160,63 @@ const expansionBoards = [
 // The final 38 boards keep the same physics vocabulary but raise the number
 // of interacting steps. Their recipe is indexed explicitly by chapter/slot so
 // the later campaign does not fall back to the old repeated-coordinate loop.
+const lateLayouts = [
+  { start: [-3.55, 5.45], cupX: 3.45, cupY: -5.35, target: [3.0, -4.15], wall: [-5.3, -2.9], ground: [-2.0, -0.6], checkpoints: [[-2.1, 2.5, 0.52], [0.3, -0.25, 0.48]], first: [-1.9, 2.0, 0.65], second: [1.4, -1.3, 0.58], bars: [barSpec(-1.2, 3.3, 3.3, -0.18), barSpec(1.1, -2.9, 2.8, 0.25)], dynamics: [dynamicBar(-2.6, 4.0, 2.4, -0.22, 0.9), dynamicBar(0.8, 1.2, 1.8, 0.15, 1.1)], spin: [0.2, -0.7, 0.78] },
+  { start: [-3.25, 5.25], cupX: 3.25, cupY: -4.95, target: [2.75, -3.35], wall: [-4.6, -1.2], ground: [0.4, 1.8], checkpoints: [[-0.8, 3.0, 0.5], [2.0, 0.1, 0.48]], first: [-0.9, 1.0, 0.72], second: [2.0, -2.4, 0.62], bars: [barSpec(0.4, 2.7, 4.6, 0), barSpec(-1.4, -1.0, 2.7, -0.3)], dynamics: [dynamicBar(-1.9, 3.5, 3.1, 0.3, 1.0), dynamicBar(1.9, 0.4, 1.6, -0.22, 0.8)], spin: [-0.8, 0.6, 0.82] },
+  { start: [-3.7, 5.5], cupX: 3.0, cupY: -5.55, target: [3.35, -2.75], wall: [-5.0, -3.25], ground: [-1.1, 0.3], checkpoints: [[-2.7, 1.2, 0.5], [1.2, -1.8, 0.5]], first: [-2.4, -0.1, 0.6], second: [0.2, -2.6, 0.72], bars: [barSpec(-2.0, 1.7, 2.4, 0.3), barSpec(1.3, -3.6, 3.6, 0.1)], dynamics: [dynamicBar(-2.3, 3.0, 2.0, 0.1, 1.2), dynamicBar(1.8, -0.3, 2.4, -0.35, 1.0), dynamicBar(0.0, -4.2, 2.2, 0.2, 0.85)], spin: [1.1, 1.1, 0.72] },
+  { start: [-3.15, 5.35], cupX: 3.55, cupY: -5.1, target: [2.6, -4.7], wall: [-3.8, -0.7], ground: [-0.4, 1.0], checkpoints: [[-1.8, 2.9, 0.5], [1.6, 0.2, 0.5]], first: [-1.0, 2.7, 0.6], second: [2.3, 0.0, 0.66], bars: [barSpec(-0.8, 3.6, 3.0, -0.24), barSpec(-1.2, -2.2, 4.0, 0.18), barSpec(2.0, -4.0, 1.8, 0)], dynamics: [dynamicBar(-2.2, 4.25, 2.6, 0.28, 1.0), dynamicBar(1.0, 1.4, 2.1, -0.12, 1.2)], spin: [-1.0, -0.1, 0.86] },
+  { start: [-3.45, 5.2], cupX: 2.85, cupY: -5.45, target: [3.45, -3.8], wall: [-5.5, -2.4], ground: [-2.5, -1.1], checkpoints: [[-1.2, 2.2, 0.48], [2.3, -2.7, 0.5]], first: [-2.3, 1.0, 0.68], second: [1.0, -1.0, 0.7], bars: [barSpec(-2.0, 2.7, 2.0, 0), barSpec(0.0, 0.2, 3.0, -0.25), barSpec(1.8, -3.1, 2.2, 0.35)], dynamics: [dynamicBar(-2.6, 3.7, 2.5, -0.18, 0.85), dynamicBar(0.3, 1.6, 2.8, 0.2, 1.25)], spin: [0.6, -1.7, 0.76] },
+  { start: [-3.3, 5.45], cupX: 3.4, cupY: -4.8, target: [2.9, -2.9], wall: [-4.7, -1.8], ground: [1.0, 2.4], checkpoints: [[-2.4, 3.1, 0.5], [0.5, -0.8, 0.48]], first: [-0.6, 0.5, 0.72], second: [2.0, -1.7, 0.62], bars: [barSpec(-2.5, 3.8, 2.5, 0.18), barSpec(0.0, 1.4, 4.0, 0.1), barSpec(-1.0, -3.8, 2.4, -0.15)], dynamics: [dynamicBar(-1.6, 4.4, 3.0, 0.12, 1.15), dynamicBar(1.9, 0.7, 1.9, -0.25, 0.9), dynamicBar(-0.3, -2.5, 2.1, 0.3, 1.0)], spin: [-1.3, 1.3, 0.8] },
+  { start: [-3.6, 5.3], cupX: 3.05, cupY: -5.3, target: [3.25, -4.35], wall: [-5.1, -3.6], ground: [-0.1, 1.3], checkpoints: [[-2.6, 1.8, 0.5], [1.8, -2.1, 0.52]], first: [-1.6, 2.9, 0.58], second: [1.1, -2.8, 0.72], bars: [barSpec(-0.5, 4.0, 4.0, 0), barSpec(1.6, 0.3, 2.6, -0.3), barSpec(-1.8, -2.7, 2.0, 0.28)], dynamics: [dynamicBar(-2.7, 3.1, 1.9, -0.4, 0.95), dynamicBar(0.9, 2.0, 3.0, 0.18, 1.25)], spin: [0.1, 1.7, 0.74] },
+  { start: [-3.2, 5.5], cupX: 3.6, cupY: -5.0, target: [2.7, -3.1], wall: [-4.4, -0.8], ground: [-2.7, -1.3], checkpoints: [[-1.7, 3.2, 0.48], [2.2, -0.5, 0.5]], first: [-2.7, 1.8, 0.64], second: [0.3, -0.6, 0.64], bars: [barSpec(-1.8, 3.2, 2.0, -0.2), barSpec(0.3, 1.0, 2.5, 0.25), barSpec(1.7, -2.5, 3.4, -0.12)], dynamics: [dynamicBar(-2.0, 4.0, 2.7, 0.22, 1.05), dynamicBar(1.8, 0.1, 2.4, -0.3, 1.0), dynamicBar(-0.6, -3.6, 2.8, 0.16, 0.9)], spin: [1.3, -1.0, 0.84] },
+  { start: [-3.5, 5.25], cupX: 3.3, cupY: -5.55, target: [3.1, -4.65], wall: [-5.4, -2.2], ground: [0.8, 2.2], checkpoints: [[-2.2, 2.7, 0.5], [1.0, -1.3, 0.5]], first: [-0.8, 1.8, 0.7], second: [2.4, -0.9, 0.58], bars: [barSpec(-2.2, 2.4, 3.2, 0.2), barSpec(-0.1, -0.7, 3.0, -0.18), barSpec(1.9, -3.6, 1.8, 0.3)], dynamics: [dynamicBar(-2.8, 3.55, 2.2, -0.28, 1.2), dynamicBar(0.7, 1.0, 3.2, 0.12, 0.9)], spin: [-0.5, 0.4, 0.79] },
+  { start: [-3.35, 5.4], cupX: 3.5, cupY: -5.2, target: [2.85, -2.4], wall: [-4.9, -1.0], ground: [-1.8, -0.4], checkpoints: [[-2.5, 1.4, 0.5], [1.6, -2.5, 0.48]], first: [-1.2, 0.2, 0.75], second: [1.5, -2.9, 0.62], bars: [barSpec(-1.8, 3.5, 3.2, -0.1), barSpec(0.8, 0.2, 4.2, 0.22), barSpec(-1.2, -3.4, 2.7, 0)], dynamics: [dynamicBar(-2.4, 4.1, 2.9, 0.34, 1.0), dynamicBar(1.4, 1.1, 2.2, -0.2, 1.3), dynamicBar(-0.2, -2.2, 1.8, 0.3, 0.85)], spin: [0.8, 1.0, 0.81] }
+];
+
+const mirrorBar = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
+const mirrorDynamic = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
+
 const lateBoard = (chapter, slot) => {
+  const layout = lateLayouts[slot];
   const direction = slot % 2 === 0 ? 1 : -1;
-  const start = [-3.25 * direction, 5.2 + (slot % 3) * 0.14];
-  const cupX = 3.15 * direction;
-  const center = direction * (0.25 + (slot % 3) * 0.48);
-  const barY = 2.9 - (slot % 4) * 0.55;
+  const start = [layout.start[0] * direction, layout.start[1] + (chapter - 5) * 0.035];
+  const cupX = layout.cupX * direction;
+  const center = direction * ((layout.ground[0] + layout.ground[1]) / 2);
   const mode = chapter === 5 ? "fixed" : chapter === 6 ? "constant" : chapter === 7 ? "variable" : "impact";
+  const firstLayout = layout.first;
+  const secondLayout = layout.second;
   const firstMachine = mode === "fixed"
-    ? cross(-1.45 * direction, 1.25 - (slot % 3) * 0.38, 0.64)
-    : wheel(-1.45 * direction, 1.25 - (slot % 3) * 0.38, 0.73, mode, mode === "constant" ? 0.82 * direction : 0, {
+    ? cross(firstLayout[0] * direction, firstLayout[1], firstLayout[2])
+    : wheel(firstLayout[0] * direction, firstLayout[1], firstLayout[2], mode, mode === "constant" ? 0.82 * direction : 0, {
         baseSpeed: 0.08 * direction,
         amplitude: 1.05,
-        frequency: 0.9 + slot * 0.035,
+        frequency: 0.82 + slot * 0.045,
         damping: 0.62 + (slot % 3) * 0.08
       });
   const secondMachine = chapter >= 6
-    ? wheel(1.35 * direction, -1.55 + (slot % 2) * 0.55, 0.7, chapter === 8 ? "impact" : "variable", chapter === 8 ? 0 : 0, {
+    ? wheel(secondLayout[0] * direction, secondLayout[1], secondLayout[2], chapter === 8 ? "impact" : "variable", chapter === 8 ? 0 : 0, {
         baseSpeed: -0.1 * direction,
         amplitude: 0.95,
-        frequency: 1.05 + (slot % 4) * 0.08,
+        frequency: 0.9 + (slot % 4) * 0.1,
         damping: 0.68
       })
-    : cross(1.35 * direction, -1.55 + (slot % 2) * 0.55, 0.62);
-  const routeBars = [
-    barSpec(0.1 * direction, barY, 4.15 + (slot % 3) * 0.25, (slot % 2 ? -0.14 : 0.12) * direction),
-    ...(chapter >= 7 ? [barSpec(-0.3 * direction, -2.85 + (slot % 2) * 0.38, 3.6, 0.18 * direction)] : [])
-  ];
+    : cross(secondLayout[0] * direction, secondLayout[1], secondLayout[2]);
+  const routeBars = layout.bars.map(item => mirrorBar(item, direction));
   const machines = [firstMachine, secondMachine];
+  const dynamics = layout.dynamics.map(item => mirrorDynamic(item, direction));
+  if (chapter >= 7) dynamics.push(dynamicBar(0.25 * direction, -1.05 + (slot % 2) * 0.55, 2.0 + (slot % 3) * 0.2, (slot % 2 ? -0.2 : 0.24) * direction, 1.1));
   const kind = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"][(chapter * 2 + slot) % 7];
-  if (kind === "ballBox") return boxBoard(start, cupX, -5.35 + (slot % 2) * 0.12, { bars: routeBars, obstacles: machines });
-  if (kind === "target") return targetBoard(start, 3.2 * direction, -4.55 + (slot % 4) * 0.38, { bars: routeBars, obstacles: machines });
-  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", -5.35 + (slot % 3) * 0.5, -2.0 + (slot % 2) * 0.7, { bars: routeBars, obstacles: machines });
-  if (kind === "strokeBox") return strokeCupBoard(cupX, -5.4 + (slot % 2) * 0.12, { bars: routeBars, obstacles: machines, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
-  if (kind === "ground") return groundBoard(start, center - 0.7, center + 0.7, { bars: routeBars, obstacles: machines });
-  if (kind === "checkpoints") return routeBoard(start, [[-1.65 * direction, 2.0 - (slot % 2) * 0.35], [1.45 * direction, -0.15 + (slot % 3) * 0.35], [cupX, -4.75]], { bars: routeBars, obstacles: machines });
-  return spinBoard(wheel(0.2 * direction, -0.1 + (slot % 3) * 0.5, 0.82, "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, { bars: routeBars, obstacles: machines });
+  const targetPoint = [layout.target[0] * direction, layout.target[1] + (chapter - 5) * 0.08];
+  const wallRange = layout.wall;
+  const groundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const checkpoints = layout.checkpoints.map(([x, y, r]) => [x * direction, y + (chapter - 5) * 0.06, r]);
+  if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, { bars: routeBars, obstacles: machines, dynamics });
+  if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], { bars: routeBars, obstacles: machines, dynamics });
+  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", wallRange[0], wallRange[1], { bars: routeBars, obstacles: machines, dynamics });
+  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { bars: routeBars, obstacles: machines, dynamics, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
+  if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], { bars: routeBars, obstacles: machines, dynamics });
+  if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75]], { bars: routeBars, obstacles: machines, dynamics });
+  return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, { bars: routeBars, obstacles: machines, dynamics });
 };
 
 const lateExpansionBoards = [
@@ -375,6 +398,7 @@ function clearScene() {
   circleObstacles.length = 0;
   staticSegments.length = 0;
   gears.length = 0;
+  dynamicBodies.length = 0;
   checkpointHits.clear();
   checkpointMarkers = [];
 }
@@ -390,6 +414,7 @@ function createScene(level) {
     else addCrossRing(obstacle.x, obstacle.y, obstacle.r, config);
   });
   (level.bars ?? []).forEach(item => bar(item.x, item.y, item.length, item.thickness, item.rotation ?? 0, white, true));
+  (level.dynamics ?? []).forEach(addDynamicBar);
   (level.noDraw ?? []).forEach(zone => {
     const area = new THREE.Mesh(new THREE.PlaneGeometry(zone.w, zone.h), forbiddenRed);
     area.position.set(zone.x, zone.y, -0.15);
@@ -475,7 +500,7 @@ function drawPointIsClear(point) {
   for (const segment of obstacleSegments) {
     if (pointSegmentDistance(point, segment.a, segment.b) < segment.radius + LINE_RADIUS + margin) return false;
   }
-  for (const body of strokes) {
+  for (const body of strokes.concat(dynamicBodies)) {
     const points = strokeWorldPoints(body);
     for (let i = 1; i < points.length; i++) {
       if (pointSegmentDistance(point, points[i - 1], points[i]) < LINE_RADIUS * 2 + margin) return false;
@@ -576,6 +601,26 @@ function makeStrokeBody(stroke) {
   };
 }
 
+function addDynamicBar(item) {
+  const rotation = item.rotation ?? 0;
+  const half = new THREE.Vector2(Math.cos(rotation) * item.length / 2, Math.sin(rotation) * item.length / 2);
+  const a = new THREE.Vector2(item.x, item.y).sub(half);
+  const b = new THREE.Vector2(item.x, item.y).add(half);
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(item.length, item.thickness ?? LINE_RADIUS * 2, 0.08), white);
+  mesh.position.set(item.x, item.y, 0.12);
+  mesh.rotation.z = rotation;
+  drawingRoot.add(mesh);
+  const body = makeStrokeBody({ points: [a, b], meshes: [mesh] });
+  body.mass *= Math.max(0.35, item.mass ?? 1);
+  body.inertia *= Math.max(0.35, item.mass ?? 1);
+  body.initialPosition = body.group.position.clone();
+  body.initialRotation = body.group.rotation.z;
+  body.initialVelocity = new THREE.Vector2();
+  body.initialAngularVelocity = 0;
+  dynamicBodies.push(body);
+  return body;
+}
+
 function endStroke(event) {
   if (event.pointerId !== activePointerId) return;
   event.preventDefault();
@@ -631,6 +676,12 @@ function resetGame() {
   gears.forEach(gear => {
     gear.group.rotation.z = 0;
     gear.angularVelocity = gear.mode === "constant" ? gear.angularVelocity : 0;
+  });
+  dynamicBodies.forEach(body => {
+    body.group.position.copy(body.initialPosition);
+    body.group.rotation.z = body.initialRotation;
+    body.velocity.copy(body.initialVelocity);
+    body.angularVelocity = body.initialAngularVelocity;
   });
   strokes.forEach(removeStroke);
   strokes = [];
@@ -857,6 +908,7 @@ function collideBallWithWalls() {
 }
 
 function physicsStep(dt) {
+  dynamicBodies.forEach(body => updateStrokeBody(body, dt));
   strokes.forEach(body => updateStrokeBody(body, dt));
   if (ball) {
     ballVelocity.y -= GRAVITY * dt;
@@ -867,7 +919,7 @@ function physicsStep(dt) {
     circleObstacles.forEach(collideBallCircle);
     staticSegments.forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4));
     gears.flatMap(gearWorldSegments).forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4, null, segment.gear));
-    strokes.forEach(body => {
+    strokes.concat(dynamicBodies).forEach(body => {
       const points = strokeWorldPoints(body);
       for (let i = 1; i < points.length; i++) collideBallSegment(points[i - 1], points[i], LINE_RADIUS, 0.32, body);
     });
@@ -957,6 +1009,7 @@ function loadLevel(index) {
   currentStroke = null;
   strokes.forEach(removeStroke);
   strokes = [];
+  dynamicBodies.forEach(body => body.meshes.forEach(mesh => mesh.geometry.dispose()));
   drawingRoot.clear();
   clearScene();
   maxStrokes = level.strokes;

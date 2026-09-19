@@ -140,6 +140,25 @@ try {
   assert.ok(scenes.distinctMissions >= 7, "the campaign includes all seven goal types");
   assert.deepEqual(scenes.errors, [], "opening every level produces no browser errors");
 
+  const dynamicPlay = await evaluatePage(`(() => {
+    const card = document.querySelector('.level-card[data-level="62"]');
+    card.click();
+    const canvas = document.querySelector('#canvasMount canvas');
+    const rect = canvas.getBoundingClientRect();
+    const emit = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId: 11, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true,
+      clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y, buttons
+    }));
+    emit('pointerdown', 0.5, 0.18, 1);
+    emit('pointermove', 0.62, 0.24, 1);
+    emit('pointerup', 0.62, 0.24, 0);
+    return { mission: document.querySelector('#missionText')?.textContent?.trim(), strokeCount: document.querySelector('#strokeCount')?.textContent?.trim() };
+  })()`);
+  await delay(180);
+  const dynamicErrors = await evaluatePage("window.__smokeErrors");
+  assert.equal(dynamicPlay.strokeCount, "1 / 4", "a late dynamic-object level accepts a touch-drawn body");
+  assert.deepEqual(dynamicErrors, [], "dynamic-object physics produces no browser errors");
+
   assert.equal(await evaluatePage("document.querySelector('.level-card[data-level=\"0\"]').click(); !document.querySelector('#gameApp').classList.contains('hidden')"), true, "the first level opens");
   await delay(100);
   const play = await evaluatePage(`(() => {
@@ -160,7 +179,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();

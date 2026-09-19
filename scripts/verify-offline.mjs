@@ -25,11 +25,16 @@ assert.equal(authoredBoardCount, 50, "the first 50 expansion levels have explici
 const lateBlock = source.match(/const lateExpansionBoards = \[([\s\S]*?)\n\];/)?.[1] ?? "";
 const lateChapterSizes = [...lateBlock.matchAll(/Array\.from\(\{ length: (\d+) \}/g)].map(([, size]) => Number(size));
 assert.deepEqual(lateChapterSizes, [10, 10, 10, 8], "the late campaign adds 38 boards in four chapters");
+const layoutBlock = source.match(/const lateLayouts = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+assert.equal([...layoutBlock.matchAll(/\{ start:/g)].length, 10, "late levels use ten distinct authored layout families");
 assert.match(source, /expansionBoards\.push\(\.\.\.lateExpansionBoards\)/, "late board recipes are included in the campaign");
 const goalTypes = new Set([...source.matchAll(/type: "(ballBox|target|wall|strokeBox|spinGear|ground|checkpoints)"/g)].map(([, type]) => type));
 assert.equal(goalTypes.size, 7, "the game supports seven distinct goal types");
 assert.match(source, /checkpointHits\.size === goal\.targets\.length/, "sequential route goals complete only after all checkpoints");
 assert.match(source, /goal\.type === "ground"/, "marked ground landing goals are evaluated");
+assert.match(source, /const dynamicBodies = \[\]/, "pre-placed dynamic bodies are supported");
+assert.match(source, /dynamicBodies\.forEach\(body => updateStrokeBody\(body, dt\)\)/, "pre-placed bodies receive gravity and collision updates");
+assert.match(source, /\(level\.dynamics \?\? \[\]\)\.forEach\(addDynamicBar\)/, "late boards include moving support objects");
 assert.match(source, /parStrokes: Math\.max\(1, strokesAllowed - 1\)/, "the third-star stroke threshold requires a better-than-maximum solution");
 assert.match(source, /const rimSegments = 40/, "ring gears have physical rim collision segments");
 assert.match(source, /unlocked === 12 && levels\.length > 12 && Number\(savedStars\[11\]\) > 0/, "legacy progress advances only after level 12 was cleared");
