@@ -44,6 +44,8 @@ const orange = new THREE.MeshBasicMaterial({ color: 0xff9f1c });
 const orangeDark = new THREE.MeshBasicMaterial({ color: 0xcc6c00 });
 const transparentWhite = new THREE.MeshBasicMaterial({ color: 0xf8f5eb, transparent: true, opacity: 0.22 });
 const forbiddenRed = new THREE.MeshBasicMaterial({ color: 0xe74c5b, transparent: true, opacity: 0.2 });
+const magnetBlue = new THREE.MeshBasicMaterial({ color: 0x4c9fff });
+const magnetRed = new THREE.MeshBasicMaterial({ color: 0xf06464 });
 
 let ball;
 let ballVelocity = new THREE.Vector2();
@@ -63,6 +65,7 @@ const circleObstacles = [];
 const staticSegments = [];
 const gears = [];
 const dynamicBodies = [];
+const magnets = [];
 let basket = null;
 let target = null;
 let checkpointHits = new Set();
@@ -173,8 +176,26 @@ const lateLayouts = [
   { start: [-3.35, 5.4], cupX: 3.5, cupY: -5.2, target: [2.85, -2.4], wall: [-4.9, -1.0], ground: [-1.8, -0.4], checkpoints: [[-2.5, 1.4, 0.5], [1.6, -2.5, 0.48]], first: [-1.2, 0.2, 0.75], second: [1.5, -2.9, 0.62], bars: [barSpec(-1.8, 3.5, 3.2, -0.1), barSpec(0.8, 0.2, 4.2, 0.22), barSpec(-1.2, -3.4, 2.7, 0)], dynamics: [dynamicBar(-2.4, 4.1, 2.9, 0.34, 1.0), dynamicBar(1.4, 1.1, 2.2, -0.2, 1.3), dynamicBar(-0.2, -2.2, 1.8, 0.3, 0.85)], spin: [0.8, 1.0, 0.81] }
 ];
 
+// Magnetic fields are introduced in the later campaign, after players have
+// learned to read gravity, moving supports, and gear timing. A positive pole
+// attracts the ball/objects; a negative pole repels them. The positions are
+// mirrored with each authored layout so the route still changes direction.
+const lateMagnetLayouts = [
+  [{ x: -2.8, y: 2.6, pull: 1, strength: 6.2 }, { x: 2.7, y: -2.2, pull: -1, strength: 5.5 }],
+  [{ x: -1.6, y: 1.2, pull: -1, strength: 6.0 }, { x: 2.4, y: 1.0, pull: 1, strength: 5.8 }],
+  [{ x: -2.7, y: -0.5, pull: 1, strength: 5.6 }, { x: 1.9, y: -2.9, pull: -1, strength: 6.1 }],
+  [{ x: -1.0, y: 3.0, pull: -1, strength: 6.4 }, { x: 2.8, y: -0.8, pull: 1, strength: 5.6 }],
+  [{ x: -2.4, y: 1.0, pull: 1, strength: 5.8 }, { x: 0.9, y: -3.3, pull: 1, strength: 5.5 }],
+  [{ x: -0.8, y: 2.8, pull: -1, strength: 6.0 }, { x: 2.5, y: -1.2, pull: -1, strength: 5.8 }],
+  [{ x: -2.9, y: 0.4, pull: 1, strength: 6.4 }, { x: 1.1, y: -2.7, pull: -1, strength: 5.9 }],
+  [{ x: -1.8, y: 2.5, pull: -1, strength: 5.7 }, { x: 2.7, y: -2.7, pull: 1, strength: 6.3 }],
+  [{ x: -2.5, y: -1.4, pull: 1, strength: 5.5 }, { x: 1.6, y: 2.0, pull: 1, strength: 6.0 }],
+  [{ x: -1.0, y: 1.4, pull: -1, strength: 6.1 }, { x: 2.6, y: -3.5, pull: 1, strength: 5.6 }]
+];
+
 const mirrorBar = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
 const mirrorDynamic = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
+const mirrorMagnet = (item, direction) => ({ ...item, x: item.x * direction });
 
 const lateBoard = (chapter, slot) => {
   const layout = lateLayouts[slot];
@@ -205,18 +226,33 @@ const lateBoard = (chapter, slot) => {
   const machines = [firstMachine, secondMachine];
   const dynamics = layout.dynamics.map(item => mirrorDynamic(item, direction));
   if (chapter >= 7) dynamics.push(dynamicBar(0.25 * direction, -1.05 + (slot % 2) * 0.55, 2.0 + (slot % 3) * 0.2, (slot % 2 ? -0.2 : 0.24) * direction, 1.1));
+  const magnets = chapter >= 6
+    ? lateMagnetLayouts[slot].map((item, index) => mirrorMagnet({
+        ...item,
+        pull: chapter === 7 && index === 1 ? -item.pull : item.pull,
+        strength: item.strength + (chapter === 8 ? 1.2 : 0)
+      }, direction))
+    : [];
+  const magnetHint = chapter < 6
+    ? ""
+    : chapter === 6
+      ? "藍色磁鐵會吸引、紅色磁鐵會排斥；先讓球靠近正確的磁場。"
+      : chapter === 7
+        ? "磁場會改變速度，先觀察吸引與排斥再畫支撐。"
+        : "磁場、重心與轉輪會同時運作，先安排球的下一次碰撞。";
+  const shared = { bars: routeBars, obstacles: machines, dynamics, magnets, magnetHint };
   const kind = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"][(chapter * 2 + slot) % 7];
   const targetPoint = [layout.target[0] * direction, layout.target[1] + (chapter - 5) * 0.08];
   const wallRange = layout.wall;
   const groundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
   const checkpoints = layout.checkpoints.map(([x, y, r]) => [x * direction, y + (chapter - 5) * 0.06, r]);
-  if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, { bars: routeBars, obstacles: machines, dynamics });
-  if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], { bars: routeBars, obstacles: machines, dynamics });
-  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", wallRange[0], wallRange[1], { bars: routeBars, obstacles: machines, dynamics });
-  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { bars: routeBars, obstacles: machines, dynamics, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
-  if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], { bars: routeBars, obstacles: machines, dynamics });
-  if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75]], { bars: routeBars, obstacles: machines, dynamics });
-  return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, { bars: routeBars, obstacles: machines, dynamics });
+  if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, shared);
+  if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], shared);
+  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", wallRange[0], wallRange[1], shared);
+  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
+  if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], shared);
+  if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75]], shared);
+  return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, shared);
 };
 
 const lateExpansionBoards = [
@@ -239,7 +275,8 @@ function buildExpansionLevels() {
   };
   return expansionChapters.flatMap((chapterInfo, chapter) => expansionBoards[chapter].map((board, slot) => {
     const type = board.goal.type;
-    const [hintTitle, hint, mission] = hints[type];
+    const [hintTitle, baseHint, mission] = hints[type];
+    const hint = board.magnetHint ? `${baseHint} ${board.magnetHint}` : baseHint;
     const strokesAllowed = chapter < 2 ? 2 : chapter < 4 ? 3 : 4;
     return {
       chapter: chapterInfo.title,
@@ -399,6 +436,7 @@ function clearScene() {
   staticSegments.length = 0;
   gears.length = 0;
   dynamicBodies.length = 0;
+  magnets.length = 0;
   checkpointHits.clear();
   checkpointMarkers = [];
 }
@@ -413,6 +451,7 @@ function createScene(level) {
     if (obstacle.style === "wheel") addWheel(obstacle.x, obstacle.y, obstacle.r, config);
     else addCrossRing(obstacle.x, obstacle.y, obstacle.r, config);
   });
+  (level.magnets ?? []).forEach(addMagnet);
   (level.bars ?? []).forEach(item => bar(item.x, item.y, item.length, item.thickness, item.rotation ?? 0, white, true));
   (level.dynamics ?? []).forEach(addDynamicBar);
   (level.noDraw ?? []).forEach(zone => {
@@ -619,6 +658,30 @@ function addDynamicBar(item) {
   body.initialAngularVelocity = 0;
   dynamicBodies.push(body);
   return body;
+}
+
+function addMagnet(config) {
+  const radius = config.r ?? 0.42;
+  const material = config.pull >= 0 ? magnetBlue : magnetRed;
+  const group = new THREE.Group();
+  group.position.set(config.x, config.y, 0.08);
+  gameRoot.add(group);
+  group.add(new THREE.Mesh(new THREE.CircleGeometry(radius, 32), material));
+  group.add(new THREE.Mesh(new THREE.RingGeometry(radius + 0.08, radius + 0.14, 32), material));
+  const pole = new THREE.Mesh(new THREE.BoxGeometry(radius * 1.55, 0.08, 0.04), white);
+  group.add(pole);
+  magnets.push({
+    x: config.x,
+    y: config.y,
+    r: radius,
+    pull: config.pull >= 0 ? 1 : -1,
+    strength: config.strength ?? 6,
+    range: config.range ?? 4.5,
+    group
+  });
+  // The core is also a real obstacle: drawings and moving bodies cannot be
+  // placed through a magnet, and the ball can bounce off its casing.
+  circleObstacles.push({ x: config.x, y: config.y, r: radius * 0.72, magnet: true });
 }
 
 function endStroke(event) {
@@ -907,10 +970,33 @@ function collideBallWithWalls() {
   if (ball.position.y + BALL_RADIUS > bounds.top) { ball.position.y = bounds.top - BALL_RADIUS; ballVelocity.y = -Math.abs(ballVelocity.y) * 0.45; }
 }
 
+function applyMagneticForce(position, velocity, mass, dt) {
+  if (!magnets.length) return;
+  magnets.forEach(magnet => {
+    const dx = magnet.x - position.x;
+    const dy = magnet.y - position.y;
+    const distanceSq = dx * dx + dy * dy;
+    const distance = Math.sqrt(distanceSq);
+    if (distance < 0.0001 || distance > magnet.range) return;
+    const falloff = Math.pow(1 - distance / magnet.range, 2);
+    const acceleration = magnet.pull * magnet.strength * falloff / Math.max(0.25, mass);
+    velocity.x += dx / distance * acceleration * dt;
+    velocity.y += dy / distance * acceleration * dt;
+  });
+  if (velocity.lengthSq() > 18 * 18) velocity.setLength(18);
+}
+
 function physicsStep(dt) {
-  dynamicBodies.forEach(body => updateStrokeBody(body, dt));
-  strokes.forEach(body => updateStrokeBody(body, dt));
+  dynamicBodies.forEach(body => {
+    applyMagneticForce(body.group.position, body.velocity, body.mass, dt);
+    updateStrokeBody(body, dt);
+  });
+  strokes.forEach(body => {
+    applyMagneticForce(body.group.position, body.velocity, body.mass, dt);
+    updateStrokeBody(body, dt);
+  });
   if (ball) {
+    applyMagneticForce(ball.position, ballVelocity, BALL_MASS, dt);
     ballVelocity.y -= GRAVITY * dt;
     ballVelocity.multiplyScalar(0.999);
     ball.position.x += ballVelocity.x * dt;
