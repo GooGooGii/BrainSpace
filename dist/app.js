@@ -72,7 +72,11 @@ const expansionChapters = [
   { title: "重心與路線", names: ["偏心推球", "禁區投杯", "兩段接力", "窄帶落點", "借牆入靶", "高低雙台", "柱間穿梭", "反向投放", "三點連線", "最後一個支點"] },
   { title: "齒輪初體驗", names: ["撞醒大齒輪", "外緣施力", "固定輪與活輪", "順時針推進", "輪後藏靶", "雙輪接力", "轉輪投杯", "齒間落球", "三種輪速", "重錘傳動"] },
   { title: "節奏與變速", names: ["慢輪入口", "變速撞靶", "牆面折返", "順逆雙輪", "抓反轉時機", "快慢兩層", "動輪窄門", "輪間投杯", "三靶計時", "變速長廊"] },
-  { title: "機關組合試煉", names: ["四輪迷陣", "雙靶狙擊", "極限反彈", "禁區空投", "啟動再接球", "逆流長廊", "偏心密室", "機關靶場", "五段接力", "最後一轉"] }
+  { title: "機關組合試煉", names: ["四輪迷陣", "雙靶狙擊", "極限反彈", "禁區空投", "啟動再接球", "逆流長廊", "偏心密室", "機關靶場", "五段接力", "最後一轉"] },
+  { title: "精密連鎖", names: ["齒輪階梯", "三次反彈", "活輪守門", "偏心入杯", "地面節點", "連鎖靶心", "高速轉盤", "逆向導軌", "輪下落點", "長距離接力"] },
+  { title: "容器與反彈", names: ["杯口斜投", "牆角回彈", "窄口靶心", "雙禁區翻身", "落地分流", "重心繞柱", "撞輪入杯", "高牆投放", "三段彈跳", "最後的容器"] },
+  { title: "時間機關", names: ["變速起點", "等候缺口", "逆轉靶心", "快輪下杯", "節拍落地", "交錯節點", "轉盤窗口", "雙速長廊", "延遲反彈", "機關倒數"] },
+  { title: "百關終極試煉", names: ["八輪入口", "末段靶心", "牆邊極限", "禁區翻越", "地面狙擊", "五點路線", "最後齒輪", "百關完成"] }
 ];
 const barSpec = (x, y, length, rotation = 0, thickness = 0.16) => ({ x, y, length, thickness, rotation });
 const cross = (x, y, r = 0.62, mode = "fixed", extra = {}) => ({ style: "cross", x, y, r, mode, ...extra });
@@ -150,6 +154,55 @@ const expansionBoards = [
     boxBoard([-3.2, 5.4], 3.2, -5.4, { obstacles: [wheel(-1.9, 2.4, 0.7, "variable", 0, { baseSpeed: 0, amplitude: 1.1, frequency: 1.2 }), wheel(-0.1, 0.3, 0.82, "constant", -1.0), cross(1.8, -2.0, 0.63), wheel(0.0, -3.5, 0.7, "impact", 0, { damping: 0.6 })], bars: [barSpec(0, 3.8, 4.2, 0), barSpec(0, -4.7, 3.6, 0.1)] })
   ]
 ];
+
+// The final 38 boards keep the same physics vocabulary but raise the number
+// of interacting steps. Their recipe is indexed explicitly by chapter/slot so
+// the later campaign does not fall back to the old repeated-coordinate loop.
+const lateBoard = (chapter, slot) => {
+  const direction = slot % 2 === 0 ? 1 : -1;
+  const start = [-3.25 * direction, 5.2 + (slot % 3) * 0.14];
+  const cupX = 3.15 * direction;
+  const center = direction * (0.25 + (slot % 3) * 0.48);
+  const barY = 2.9 - (slot % 4) * 0.55;
+  const mode = chapter === 5 ? "fixed" : chapter === 6 ? "constant" : chapter === 7 ? "variable" : "impact";
+  const firstMachine = mode === "fixed"
+    ? cross(-1.45 * direction, 1.25 - (slot % 3) * 0.38, 0.64)
+    : wheel(-1.45 * direction, 1.25 - (slot % 3) * 0.38, 0.73, mode, mode === "constant" ? 0.82 * direction : 0, {
+        baseSpeed: 0.08 * direction,
+        amplitude: 1.05,
+        frequency: 0.9 + slot * 0.035,
+        damping: 0.62 + (slot % 3) * 0.08
+      });
+  const secondMachine = chapter >= 6
+    ? wheel(1.35 * direction, -1.55 + (slot % 2) * 0.55, 0.7, chapter === 8 ? "impact" : "variable", chapter === 8 ? 0 : 0, {
+        baseSpeed: -0.1 * direction,
+        amplitude: 0.95,
+        frequency: 1.05 + (slot % 4) * 0.08,
+        damping: 0.68
+      })
+    : cross(1.35 * direction, -1.55 + (slot % 2) * 0.55, 0.62);
+  const routeBars = [
+    barSpec(0.1 * direction, barY, 4.15 + (slot % 3) * 0.25, (slot % 2 ? -0.14 : 0.12) * direction),
+    ...(chapter >= 7 ? [barSpec(-0.3 * direction, -2.85 + (slot % 2) * 0.38, 3.6, 0.18 * direction)] : [])
+  ];
+  const machines = [firstMachine, secondMachine];
+  const kind = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"][(chapter * 2 + slot) % 7];
+  if (kind === "ballBox") return boxBoard(start, cupX, -5.35 + (slot % 2) * 0.12, { bars: routeBars, obstacles: machines });
+  if (kind === "target") return targetBoard(start, 3.2 * direction, -4.55 + (slot % 4) * 0.38, { bars: routeBars, obstacles: machines });
+  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", -5.35 + (slot % 3) * 0.5, -2.0 + (slot % 2) * 0.7, { bars: routeBars, obstacles: machines });
+  if (kind === "strokeBox") return strokeCupBoard(cupX, -5.4 + (slot % 2) * 0.12, { bars: routeBars, obstacles: machines, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
+  if (kind === "ground") return groundBoard(start, center - 0.7, center + 0.7, { bars: routeBars, obstacles: machines });
+  if (kind === "checkpoints") return routeBoard(start, [[-1.65 * direction, 2.0 - (slot % 2) * 0.35], [1.45 * direction, -0.15 + (slot % 3) * 0.35], [cupX, -4.75]], { bars: routeBars, obstacles: machines });
+  return spinBoard(wheel(0.2 * direction, -0.1 + (slot % 3) * 0.5, 0.82, "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, { bars: routeBars, obstacles: machines });
+};
+
+const lateExpansionBoards = [
+  Array.from({ length: 10 }, (_, slot) => lateBoard(5, slot)),
+  Array.from({ length: 10 }, (_, slot) => lateBoard(6, slot)),
+  Array.from({ length: 10 }, (_, slot) => lateBoard(7, slot)),
+  Array.from({ length: 8 }, (_, slot) => lateBoard(8, slot))
+];
+expansionBoards.push(...lateExpansionBoards);
 
 function buildExpansionLevels() {
   const hints = {
@@ -874,7 +927,9 @@ function renderLevelSelect() {
     const stars = Number(savedStars[index]) || 0;
     const chapter = level.chapter ?? "基礎課程";
     const previousChapter = index ? levels[index - 1].chapter ?? "基礎課程" : null;
-    const chapterHeading = chapter !== previousChapter ? `<h2 class="chapter-heading"><span>${chapter}</span><small>${String(index + 1).padStart(2, "0")}—${String(Math.min(levels.length, index + (chapter === "基礎課程" ? 12 : 10))).padStart(2, "0")}</small></h2>` : "";
+    const chapterEnd = levels.findIndex((candidate, candidateIndex) => candidateIndex > index && (candidate.chapter ?? "基礎課程") !== chapter);
+    const chapterLast = chapterEnd === -1 ? levels.length : chapterEnd;
+    const chapterHeading = chapter !== previousChapter ? `<h2 class="chapter-heading"><span>${chapter}</span><small>${String(index + 1).padStart(2, "0")}—${String(chapterLast).padStart(2, "0")}</small></h2>` : "";
     return `${chapterHeading}<button class="level-card" data-level="${index}" ${locked ? "disabled" : ""}>
       <span class="level-number">${String(index + 1).padStart(2, "0")}</span>
       <span class="level-name">${level.name}</span>

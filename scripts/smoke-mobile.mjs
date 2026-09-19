@@ -95,7 +95,7 @@ try {
     window.__smokeErrors = [];
     window.addEventListener('error', event => window.__smokeErrors.push(event.message));
     window.addEventListener('unhandledrejection', event => window.__smokeErrors.push(String(event.reason)));
-    if (location.protocol === 'file:') localStorage.setItem('brain-physics-unlocked', '62');
+    if (location.protocol === 'file:') localStorage.setItem('brain-physics-unlocked', '100');
   ` });
   const gameUrl = pathToFileURL(resolve("dist/index.html")).href;
   await sendPage("Page.navigate", { url: gameUrl });
@@ -118,13 +118,13 @@ try {
     };
   })()`);
   assert.equal(menu.ready, "true", "game initialization completed");
-  assert.equal(menu.cards, 62, "all 62 level cards rendered");
+  assert.equal(menu.cards, 100, "all 100 level cards rendered");
   assert.equal(menu.firstLevel, "0", "the first level is present");
   assert.ok(menu.firstVisible && menu.gridHeight > 0, "the level grid is visible on a phone viewport");
 
   const scenes = await evaluatePage(`(async () => {
     const missions = [];
-    for (let index = 0; index < 62; index++) {
+    for (let index = 0; index < 100; index++) {
       const card = document.querySelector('.level-card[data-level="' + index + '"]');
       if (!card || card.disabled) throw new Error('level card unavailable: ' + (index + 1));
       card.click();
@@ -136,7 +136,7 @@ try {
     }
     return { opened: missions.length, distinctMissions: new Set(missions).size, errors: window.__smokeErrors };
   })()`);
-  assert.equal(scenes.opened, 62, "all 62 level scenes can be opened on a phone viewport");
+  assert.equal(scenes.opened, 100, "all 100 level scenes can be opened on a phone viewport");
   assert.ok(scenes.distinctMissions >= 7, "the campaign includes all seven goal types");
   assert.deepEqual(scenes.errors, [], "opening every level produces no browser errors");
 

@@ -13,14 +13,19 @@ assert.ok(chapterBlock, "expansion chapter list is present");
 const chapterEntries = [...chapterBlock.matchAll(/\{ title: "([^"]+)", names: \[([^\]]+)\] \}/g)];
 const chapters = chapterEntries.map(([, title, names]) => ({ title, levels: [...names.matchAll(/"([^"]+)"/g)].map(([, name]) => name) }));
 assert.equal(baseLevelCount, 12, "the original twelve levels are preserved");
-assert.equal(chapters.length, 5, "five new chapters are present");
-assert.ok(chapters.every(chapter => chapter.levels.length === 10), "each new chapter contains ten named levels");
-assert.equal(baseLevelCount + chapters.reduce((sum, chapter) => sum + chapter.levels.length, 0), 62, "the campaign contains 62 levels total");
+assert.equal(chapters.length, 9, "nine campaign chapters are present");
+assert.ok(chapters.slice(0, -1).every(chapter => chapter.levels.length === 10), "the first eight chapters contain ten named levels");
+assert.deepEqual(chapters.slice(-1)[0].levels.length, 8, "the final chapter contains the eight levels needed to reach 100");
+assert.equal(baseLevelCount + chapters.reduce((sum, chapter) => sum + chapter.levels.length, 0), 100, "the campaign contains 100 levels total");
 
 const boardBlock = source.match(/const expansionBoards = \[([\s\S]*?)\n\];/)?.[1] ?? "";
 assert.ok(boardBlock, "hand-authored expansion board recipes are present");
 const authoredBoardCount = [...boardBlock.matchAll(/\b(?:boxBoard|targetBoard|wallBoard|strokeCupBoard|groundBoard|routeBoard|spinBoard)\(/g)].length;
-assert.equal(authoredBoardCount, 50, "all 50 expansion levels have an explicit authored board recipe");
+assert.equal(authoredBoardCount, 50, "the first 50 expansion levels have explicit authored board recipes");
+const lateBlock = source.match(/const lateExpansionBoards = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+const lateChapterSizes = [...lateBlock.matchAll(/Array\.from\(\{ length: (\d+) \}/g)].map(([, size]) => Number(size));
+assert.deepEqual(lateChapterSizes, [10, 10, 10, 8], "the late campaign adds 38 boards in four chapters");
+assert.match(source, /expansionBoards\.push\(\.\.\.lateExpansionBoards\)/, "late board recipes are included in the campaign");
 const goalTypes = new Set([...source.matchAll(/type: "(ballBox|target|wall|strokeBox|spinGear|ground|checkpoints)"/g)].map(([, type]) => type));
 assert.equal(goalTypes.size, 7, "the game supports seven distinct goal types");
 assert.match(source, /checkpointHits\.size === goal\.targets\.length/, "sequential route goals complete only after all checkpoints");
@@ -30,7 +35,7 @@ assert.match(source, /const rimSegments = 40/, "ring gears have physical rim col
 assert.match(source, /unlocked === 12 && levels\.length > 12 && Number\(savedStars\[11\]\) > 0/, "legacy progress advances only after level 12 was cleared");
 
 assert.ok(bundle.length > 400_000, "Three.js and the game are bundled locally");
-assert.ok(html.includes("已解鎖 1 / 62"), "offline game shows the full level count");
+assert.ok(html.includes("已解鎖 1 / 100"), "offline game shows the full level count");
 const inlineStart = html.indexOf("<script>") + "<script>".length;
 const inlineEnd = html.lastIndexOf("</script>");
 const inlineScript = html.slice(inlineStart, inlineEnd).trimEnd();
@@ -42,4 +47,4 @@ assert.ok(inlineScript.endsWith(escapedBundle.slice(-200)), "standalone HTML emb
 assert.ok(!htmlShell.includes('src="./game.bundle.js"') && !htmlShell.includes('href="./styles.css"'), "download is a single self-contained HTML file");
 assert.ok((await stat(new URL("../dist/index.html", import.meta.url))).size > 400_000, "standalone HTML is present and non-empty");
 
-console.log(JSON.stringify({ levels: 62, originalLevels: baseLevelCount, authoredExpansionBoards: authoredBoardCount, chapters: chapters.map(chapter => ({ name: chapter.title, levels: chapter.levels.length })), goalTypes: [...goalTypes], standaloneHtmlBytes: (await stat(new URL("../dist/index.html", import.meta.url))).size }));
+console.log(JSON.stringify({ levels: 100, originalLevels: baseLevelCount, authoredExpansionBoards: authoredBoardCount, lateChapterSizes, chapters: chapters.map(chapter => ({ name: chapter.title, levels: chapter.levels.length })), goalTypes: [...goalTypes], standaloneHtmlBytes: (await stat(new URL("../dist/index.html", import.meta.url))).size }));
