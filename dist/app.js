@@ -64,83 +64,120 @@ const staticSegments = [];
 const gears = [];
 let basket = null;
 let target = null;
+let checkpointHits = new Set();
+let checkpointMarkers = [];
 
 const expansionChapters = [
-  { title: "重力實驗", names: ["落石轉向", "穿環命中", "反彈到右牆", "高空投杯", "偏心啟動", "雙層斜坡", "繞牆入杯", "低空靶心", "折線滑道", "側撞轉盤"] },
-  { title: "重心工房", names: ["長桿翻身", "窄門下墜", "借牆回彈", "斜塔投放", "重錘外緣", "中央高牆", "禁區彎道", "障礙靶場", "兩段接力", "槓桿轉輪"] },
-  { title: "齒輪街區", names: ["碰撞起步", "齒間穿梭", "逆牆反射", "轉輪投杯", "連鎖啟動", "順流雙輪", "輪下禁區", "齒頂靶心", "三輪通道", "重物傳動"] },
-  { title: "節奏機房", names: ["變速入口", "瞬間靶心", "拍牆折返", "節奏投杯", "反轉時刻", "快慢雙層", "禁區計時", "輪間射門", "三拍落球", "變速連桿"] },
-  { title: "大師試煉", names: ["四輪迷陣", "終點狙擊", "極限反彈", "紅區空投", "工房點火", "逆流長廊", "偏心密室", "機關靶場", "五輪接力", "最後一轉"] }
+  { title: "重力與落點", names: ["第一道斜坡", "下坡撞靶", "左牆折返", "杯口外投放", "落點窄門", "跨越高牆", "雙層導軌", "右牆回彈", "雙靶接力", "繞過石柱"] },
+  { title: "重心與路線", names: ["偏心推球", "禁區投杯", "兩段接力", "窄帶落點", "借牆入靶", "高低雙台", "柱間穿梭", "反向投放", "三點連線", "最後一個支點"] },
+  { title: "齒輪初體驗", names: ["撞醒大齒輪", "外緣施力", "固定輪與活輪", "順時針推進", "輪後藏靶", "雙輪接力", "轉輪投杯", "齒間落球", "三種輪速", "重錘傳動"] },
+  { title: "節奏與變速", names: ["慢輪入口", "變速撞靶", "牆面折返", "順逆雙輪", "抓反轉時機", "快慢兩層", "動輪窄門", "輪間投杯", "三靶計時", "變速長廊"] },
+  { title: "機關組合試煉", names: ["四輪迷陣", "雙靶狙擊", "極限反彈", "禁區空投", "啟動再接球", "逆流長廊", "偏心密室", "機關靶場", "五段接力", "最後一轉"] }
 ];
-const expansionGoalPatterns = [
-  ["ballBox", "target", "wall", "strokeBox", "spinGear", "ballBox", "strokeBox", "target", "ballBox", "spinGear"],
-  ["strokeBox", "wall", "target", "ballBox", "spinGear", "target", "ballBox", "strokeBox", "wall", "spinGear"],
-  ["spinGear", "ballBox", "target", "strokeBox", "wall", "ballBox", "spinGear", "target", "strokeBox", "ballBox"],
-  ["target", "spinGear", "ballBox", "wall", "strokeBox", "ballBox", "target", "spinGear", "wall", "strokeBox"],
-  ["wall", "target", "spinGear", "ballBox", "strokeBox", "target", "ballBox", "wall", "spinGear", "ballBox"]
-];
+const barSpec = (x, y, length, rotation = 0, thickness = 0.16) => ({ x, y, length, thickness, rotation });
+const cross = (x, y, r = 0.62, mode = "fixed", extra = {}) => ({ style: "cross", x, y, r, mode, ...extra });
+const wheel = (x, y, r = 0.76, mode = "constant", speed = 0.8, extra = {}) => ({ style: "wheel", x, y, r, mode, speed, ...extra });
+const cupAt = (x, y = -5.55, w = 1.45, h = 1.15) => [x - w / 2, x + w / 2, y - h / 2, y + h / 2];
+const boxBoard = (ball, cupX, cupY = -5.55, extra = {}) => ({ ...extra, ball, basket: cupAt(cupX, cupY), goal: { type: "ballBox" } });
+const targetBoard = (ball, x, y, extra = {}) => ({ ...extra, ball, goal: { type: "target", x, y, r: 0.58 } });
+const wallBoard = (ball, side, minY, maxY, extra = {}) => ({ ...extra, ball, goal: { type: "wall", side, minY, maxY } });
+const strokeCupBoard = (cupX, cupY, extra = {}) => ({ ...extra, basket: cupAt(cupX, cupY, 1.6, 1.2), goal: { type: "strokeBox" }, noDraw: [{ x: cupX, y: cupY + 1.0, w: 2.1, h: 2.4 }, ...(extra.noDraw ?? [])] });
+const groundBoard = (ball, minX, maxX, extra = {}) => ({ ...extra, ball, goal: { type: "ground", minX, maxX } });
+const routeBoard = (ball, targets, extra = {}) => ({ ...extra, ball, goal: { type: "checkpoints", targets: targets.map(([x, y, r = 0.5]) => ({ x, y, r })) } });
+const spinBoard = (gear, speed, extra = {}) => ({ ...extra, goal: { type: "spinGear", speed }, obstacles: [gear, ...(extra.obstacles ?? [])] });
 
-function expansionObstacles(chapter, slot, flip, spinGoal) {
-  const direction = flip ? -1 : 1;
-  if (spinGoal) {
-    const items = [{ style: slot % 2 ? "wheel" : "cross", x: 0.2 * direction, y: -0.7, r: 0.78 + chapter * 0.035, mode: "impact", damping: Math.max(0.45, 0.8 - chapter * 0.07) }];
-    if (chapter >= 2) items.push({ style: "cross", x: 2.25 * direction, y: 2.2, r: 0.58, mode: "fixed" });
-    if (chapter >= 4) items.push({ style: "wheel", x: -2.0 * direction, y: -3.2, r: 0.68, mode: "variable", baseSpeed: -0.3 * direction, amplitude: 0.9, frequency: 1.05 });
-    return items;
-  }
-  if (chapter === 0) return slot % 2 ? [{ style: "cross", x: 0.3 * direction, y: -0.1, r: 0.58, mode: "fixed" }] : [];
-  if (chapter === 1) return [{ style: "cross", x: -1.25 * direction, y: 1.0, r: 0.62, mode: "fixed" }, { style: "cross", x: 1.55 * direction, y: -2.1, r: 0.56, mode: "fixed" }];
-  if (chapter === 2) return [{ style: "wheel", x: -1.25 * direction, y: 1.25, r: 0.74, mode: "impact", damping: 0.65 }, { style: "wheel", x: 1.55 * direction, y: -2.0, r: 0.7, mode: "constant", speed: 0.82 * direction }];
-  if (chapter === 3) return [{ style: "wheel", x: -1.55 * direction, y: 1.45, r: 0.78, mode: "variable", baseSpeed: -0.35 * direction, amplitude: 1.0, frequency: 0.85 + slot * 0.04 }, { style: "wheel", x: 1.45 * direction, y: -1.75, r: 0.74, mode: "constant", speed: 0.9 * direction }];
-  return [{ style: "wheel", x: -2.15 * direction, y: 2.8, r: 0.7, mode: "variable", baseSpeed: -0.4 * direction, amplitude: 1.0, frequency: 1.1 }, { style: "cross", x: 1.65 * direction, y: 2.3, r: 0.57, mode: "impact", damping: 0.7 }, { style: "cross", x: -0.5 * direction, y: -0.3, r: 0.58, mode: "fixed" }, { style: "wheel", x: 2.0 * direction, y: -2.7, r: 0.7, mode: "constant", speed: 0.9 * direction }];
-}
+// Authored board recipes: each entry changes the start, route, landing zone, or
+// machine layout. Mechanics are introduced, then recombined in later chapters.
+const expansionBoards = [
+  [
+    boxBoard([-3.25, 5.25], 3.25),
+    targetBoard([-3.4, 5.35], 3.35, -3.85, { bars: [barSpec(0.0, 1.25, 4.4, -0.1)] }),
+    wallBoard([2.8, 5.45], "left", -5.5, -2.8, { bars: [barSpec(-0.1, -1.8, 4.2, 0.18)] }),
+    strokeCupBoard(-3.2, -5.45),
+    groundBoard([-3.1, 5.45], -0.9, 0.9, { bars: [barSpec(-1.4, -2.3, 3.2, -0.12)] }),
+    boxBoard([-3.25, 5.45], 3.25, -5.45, { bars: [barSpec(0.2, -1.9, 4.8, Math.PI / 2)] }),
+    targetBoard([3.15, 5.2], -3.3, -2.5, { bars: [barSpec(0.1, 2.7, 5.0, 0), barSpec(-0.2, -0.1, 4.1, 0.14)] }),
+    wallBoard([-3.1, 5.35], "right", -1.6, 1.6, { obstacles: [cross(0.15, -1.1, 0.68)] }),
+    routeBoard([-3.25, 5.4], [[-1.5, 1.0], [2.4, -3.9]], { bars: [barSpec(0.1, 3.0, 4.4, 0), barSpec(-0.4, -1.0, 4.0, 0.12)] }),
+    boxBoard([3.2, 5.4], -3.25, -5.45, { obstacles: [cross(-0.9, 0.0, 0.72)] })
+  ],
+  [
+    boxBoard([-3.3, 5.25], 3.25, -5.45, { bars: [barSpec(0, -0.9, 4.2, 0.12)], obstacles: [cross(1.35, -3.0, 0.58)] }),
+    strokeCupBoard(3.2, -5.5, { bars: [barSpec(-0.2, 0.1, 4.0, -0.22)] }),
+    routeBoard([3.2, 5.25], [[1.3, 1.0], [-1.6, -1.6], [-3.2, -4.65]], { bars: [barSpec(0.3, 3.05, 4.1, 0), barSpec(-0.25, -0.2, 4.6, 0.1)] }),
+    groundBoard([-3.2, 5.35], 1.15, 2.0, { bars: [barSpec(0.0, 0.7, 4.2, -0.16)], obstacles: [cross(2.7, -2.0, 0.62)] }),
+    targetBoard([-3.25, 5.2], 3.2, -5.0, { bars: [barSpec(-0.1, 2.8, 4.5, 0), barSpec(0.2, -1.1, 4.8, -0.18)] }),
+    wallBoard([3.1, 5.25], "left", -5.2, -3.3, { obstacles: [cross(-0.4, 0.2, 0.72)], bars: [barSpec(-0.2, -2.1, 4.0, 0.12)] }),
+    boxBoard([-3.25, 5.4], 3.15, -3.9, { obstacles: [cross(-1.5, 1.5, 0.65), cross(1.5, -1.4, 0.65)], bars: [barSpec(0, -4.8, 3.3, 0)] }),
+    targetBoard([3.15, 5.2], -3.2, 1.5, { obstacles: [cross(-1.15, -1.5, 0.7)], bars: [barSpec(0.15, 2.4, 4.1, 0.12), barSpec(0, -3.8, 4.5, -0.12)] }),
+    strokeCupBoard(-3.2, -5.5, { bars: [barSpec(0.2, -2.0, 4.6, 0.18)], noDraw: [{ x: 1.9, y: -3.0, w: 1.4, h: 2.0 }] }),
+    boxBoard([3.25, 5.35], -3.2, -5.45, { obstacles: [cross(-1.3, 2.0, 0.6), cross(1.4, -0.5, 0.7)], bars: [barSpec(0, -3.4, 3.6, 0.18)] })
+  ],
+  [
+    boxBoard([-3.25, 5.35], 3.2, -5.45, { obstacles: [wheel(-0.6, 1.1, 0.8, "impact", 0, { damping: 0.7 })] }),
+    spinBoard(cross(0.3, -0.6, 0.8, "impact", { damping: 0.65 }), 0.58),
+    boxBoard([3.2, 5.3], -3.2, -5.45, { obstacles: [cross(-1.3, 0.6, 0.65), wheel(1.2, -1.9, 0.72, "constant", -0.78)] }),
+    targetBoard([-3.3, 5.4], 3.1, -3.7, { obstacles: [wheel(0.2, 1.4, 0.78, "constant", 0.85)], bars: [barSpec(0, -2.0, 4.8, -0.15)] }),
+    strokeCupBoard(3.15, -5.45, { obstacles: [cross(-0.5, 0.2, 0.74, "fixed"), wheel(1.1, -2.0, 0.72, "impact", 0, { damping: 0.75 })] }),
+    spinBoard(wheel(-0.2, 0.8, 0.84, "impact", 0, { damping: 0.6 }), 0.72, { obstacles: [cross(2.3, -2.0, 0.62)] }),
+    boxBoard([-3.2, 5.25], 3.2, -5.4, { obstacles: [wheel(-1.4, 1.2, 0.72, "constant", -0.9), wheel(1.4, -1.5, 0.72, "impact", 0, { damping: 0.7 })], bars: [barSpec(0, -3.5, 3.8, 0.12)] }),
+    groundBoard([3.2, 5.3], -0.65, 0.65, { obstacles: [cross(-1.2, -0.8, 0.66), wheel(1.3, 1.4, 0.78, "constant", 0.9)] }),
+    routeBoard([-3.2, 5.4], [[-1.6, 2.3], [1.8, -0.2], [3.2, -4.8]], { obstacles: [wheel(-1.0, 0.1, 0.74, "impact", 0, { damping: 0.6 }), cross(1.1, -2.4, 0.6)], bars: [barSpec(0.1, 3.7, 4.2, 0)] }),
+    boxBoard([3.2, 5.35], -3.2, -5.45, { obstacles: [cross(-1.9, 2.4, 0.6), wheel(0.1, 0.1, 0.78, "constant", -0.82), wheel(1.7, -2.7, 0.68, "impact", 0, { damping: 0.7 })] })
+  ],
+  [
+    boxBoard([-3.2, 5.3], 3.2, -5.4, { obstacles: [wheel(-1.5, 1.6, 0.76, "variable", 0, { baseSpeed: 0.15, amplitude: 1.05, frequency: 1.0 })] }),
+    targetBoard([3.2, 5.35], -3.2, -3.9, { obstacles: [wheel(-1.3, 1.0, 0.74, "variable", 0, { baseSpeed: -0.25, amplitude: 1.1, frequency: 1.2 }), cross(1.0, -1.2, 0.62)], bars: [barSpec(0, 2.5, 4.5, 0.12)] }),
+    wallBoard([-3.2, 5.25], "right", -4.9, -2.0, { obstacles: [wheel(-0.8, 1.4, 0.78, "constant", 0.9), wheel(1.1, -1.8, 0.74, "variable", 0, { baseSpeed: 0.05, amplitude: 1.0, frequency: 0.85 })] }),
+    boxBoard([3.2, 5.35], -3.2, -5.4, { obstacles: [wheel(-1.4, 1.6, 0.75, "constant", -0.9), wheel(1.3, -1.5, 0.75, "constant", 0.9)], bars: [barSpec(0, -3.6, 4.0, -0.14)] }),
+    routeBoard([-3.2, 5.3], [[0, 2.7], [2.8, -3.5]], { obstacles: [wheel(0, 0.2, 0.82, "variable", 0, { baseSpeed: -0.15, amplitude: 1.15, frequency: 1.25 })], bars: [barSpec(-1.5, -2.2, 3.2, 0.2)] }),
+    groundBoard([3.2, 5.25], -0.9, 0.9, { obstacles: [wheel(-1.7, 1.7, 0.72, "variable", 0, { baseSpeed: 0.1, amplitude: 0.9, frequency: 0.75 }), wheel(1.6, -1.2, 0.76, "constant", -0.85)], bars: [barSpec(0, -3.8, 4.2, 0)] }),
+    targetBoard([-3.2, 5.4], 3.15, -4.8, { obstacles: [wheel(-1.7, 1.3, 0.76, "variable", 0, { baseSpeed: -0.1, amplitude: 1.0, frequency: 1.1 }), cross(1.3, -1.5, 0.67)], bars: [barSpec(0.1, 3.2, 4.3, 0)] }),
+    strokeCupBoard(-3.2, -5.45, { obstacles: [wheel(0, 0.5, 0.8, "constant", 0.95), cross(2.0, -2.6, 0.62)], bars: [barSpec(-1.0, -2.0, 3.6, 0.18)] }),
+    routeBoard([3.2, 5.4], [[1.3, 1.7], [-1.6, -1.0], [-3.2, -4.9]], { obstacles: [wheel(-1.6, 1.7, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.05, frequency: 1.3 }), wheel(1.4, -1.9, 0.72, "constant", -0.95)], bars: [barSpec(0, 3.4, 4.2, 0)] }),
+    boxBoard([-3.2, 5.3], 3.2, -5.4, { obstacles: [wheel(-1.8, 2.2, 0.72, "variable", 0, { baseSpeed: 0.12, amplitude: 1.05, frequency: 1.0 }), wheel(0.1, -0.1, 0.82, "constant", -1.0), wheel(1.8, -3.0, 0.72, "variable", 0, { baseSpeed: -0.08, amplitude: 0.95, frequency: 1.4 })], bars: [barSpec(-0.5, -4.1, 3.1, 0.2)] })
+  ],
+  [
+    routeBoard([-3.2, 5.4], [[-2.0, 2.1], [0.5, -0.5], [3.15, -4.7]], { obstacles: [wheel(-1.4, 2.1, 0.72, "variable", 0, { baseSpeed: 0.1, amplitude: 1.0, frequency: 1.1 }), wheel(1.2, -1.2, 0.78, "constant", -1.0)], bars: [barSpec(0, 3.5, 4.4, 0), barSpec(-0.1, -3.1, 4.3, 0.12)] }),
+    targetBoard([3.2, 5.3], -3.15, -4.8, { obstacles: [cross(-1.4, 1.0, 0.64), wheel(0.5, -0.8, 0.8, "variable", 0, { baseSpeed: 0, amplitude: 1.2, frequency: 1.15 }), cross(1.8, -3.0, 0.6)], bars: [barSpec(0.1, 2.8, 4.0, -0.1)] }),
+    wallBoard([-3.2, 5.35], "right", -5.5, -2.6, { obstacles: [wheel(-1.7, 1.7, 0.72, "constant", 1.0), cross(0.1, -0.2, 0.68), wheel(1.6, -2.3, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.1, frequency: 1.3 })] }),
+    strokeCupBoard(3.2, -5.4, { obstacles: [wheel(-1.2, 1.4, 0.76, "variable", 0, { baseSpeed: 0.1, amplitude: 1.0, frequency: 0.9 }), cross(1.0, -1.3, 0.68), wheel(1.8, -3.1, 0.72, "constant", -0.9)], bars: [barSpec(0, 0.3, 4.8, 0.15)] }),
+    spinBoard(wheel(0.2, 0.2, 0.84, "impact", 0, { damping: 0.55 }), 0.78, { obstacles: [wheel(-2.0, 2.3, 0.68, "variable", 0, { baseSpeed: 0, amplitude: 0.9, frequency: 1.1 }), cross(2.1, -2.4, 0.62)] }),
+    groundBoard([3.2, 5.3], -0.7, 0.7, { obstacles: [wheel(-1.6, 1.8, 0.72, "variable", 0, { baseSpeed: -0.1, amplitude: 1.1, frequency: 1.0 }), wheel(0.4, -0.4, 0.8, "constant", 1.0), cross(2.0, -3.1, 0.62)], bars: [barSpec(-0.2, -4.7, 3.2, 0)] }),
+    boxBoard([-3.2, 5.4], 3.2, -5.4, { obstacles: [wheel(-1.6, 1.8, 0.72, "constant", -0.95), wheel(0.5, 0.0, 0.78, "impact", 0, { damping: 0.65 }), wheel(1.7, -2.4, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.0, frequency: 1.2 })], bars: [barSpec(-0.1, 3.5, 4.2, 0)] }),
+    routeBoard([-3.2, 5.3], [[-1.7, 2.4], [1.7, 0.0], [3.2, -4.7]], { obstacles: [wheel(-1.2, 1.3, 0.72, "variable", 0, { baseSpeed: 0.05, amplitude: 1.0, frequency: 1.35 }), cross(0.6, -1.2, 0.64), wheel(1.5, -2.8, 0.74, "constant", -1.05)], bars: [barSpec(0, 3.7, 4.1, 0), barSpec(-0.2, -3.5, 3.8, 0.12)] }),
+    targetBoard([3.2, 5.3], -3.2, -4.9, { obstacles: [wheel(-1.8, 2.2, 0.7, "variable", 0, { baseSpeed: 0, amplitude: 1.1, frequency: 1.4 }), wheel(0, 0.0, 0.84, "constant", 0.95), wheel(1.7, -2.6, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 0.95, frequency: 0.85 })], bars: [barSpec(0.2, 3.4, 4.3, 0)] }),
+    boxBoard([-3.2, 5.4], 3.2, -5.4, { obstacles: [wheel(-1.9, 2.4, 0.7, "variable", 0, { baseSpeed: 0, amplitude: 1.1, frequency: 1.2 }), wheel(-0.1, 0.3, 0.82, "constant", -1.0), cross(1.8, -2.0, 0.63), wheel(0.0, -3.5, 0.7, "impact", 0, { damping: 0.6 })], bars: [barSpec(0, 3.8, 4.2, 0), barSpec(0, -4.7, 3.6, 0.1)] })
+  ]
+];
 
 function buildExpansionLevels() {
   const hints = {
-    ballBox: ["替球安排下一次碰撞", "長線不一定最好，短重物更容易控制角度。"],
-    target: ["先對準最後一次反彈", "目標只需要球碰到，不必停在裡面。"],
-    wall: ["牆面也是終點", "利用落下物的偏心碰撞，把球推往指定側。"],
-    strokeBox: ["先考慮物件的重心", "紅色區不能畫，讓物件翻轉或滑入杯中。"],
-    spinGear: ["撞外緣才有力矩", "重物擊中中心不易旋轉，瞄準齒輪外側。"]
+    ballBox: ["先搭一段路", "接住下落的球，再把斜面朝杯口傾斜；短物件也能改變球的方向。", "把球送進橙色盒子"],
+    target: ["先看靶心高度", "直接落下不一定會命中，利用牆面或導軌改變球的水平速度。", "讓球碰到橙色靶心"],
+    wall: ["牆也是終點", "橙色標記只涵蓋牆面的一段，先把球送到正確高度再撞牆。", "讓球碰到橙色牆面"],
+    strokeBox: ["物件也有重心", "紅色區不能下筆。畫一個有長短差的形狀，讓它翻轉後落入杯中。", "把手繪物件送進橙色杯子"],
+    spinGear: ["撞外緣才會轉", "落下的物件需要在齒輪中心之外接觸，才能產生旋轉力矩。", "讓白色轉輪轉起來"],
+    ground: ["瞄準地板標記", "利用一次碰撞調整落點；球碰到橙色地面區域就算完成。", "讓球落在橙色地面標記"],
+    checkpoints: ["按順序串起路線", "球要依序碰過每個橙色節點。先觀察節點高度，再決定要借哪一道牆。", "依序碰過所有橙色節點"]
   };
-  return expansionChapters.flatMap((chapterInfo, chapter) => chapterInfo.names.map((name, slot) => {
-    const type = expansionGoalPatterns[chapter][slot];
-    const flip = (chapter + slot) % 2 === 1;
-    const direction = flip ? -1 : 1;
-    const startX = -3.25 * direction;
-    const endX = 3.35 * direction;
-    const basket = endX > 0 ? [2.7, 4.05, -6.2, -5.0] : [-4.05, -2.7, -6.2, -5.0];
-    const strokesAllowed = chapter < 2 ? 2 : 3;
-    const level = {
+  return expansionChapters.flatMap((chapterInfo, chapter) => expansionBoards[chapter].map((board, slot) => {
+    const type = board.goal.type;
+    const [hintTitle, hint, mission] = hints[type];
+    const strokesAllowed = chapter < 2 ? 2 : chapter < 4 ? 3 : 4;
+    return {
       chapter: chapterInfo.title,
-      name,
-      difficulty: Math.min(4, 2 + Math.floor(chapter / 2)),
+      name: chapterInfo.names[slot],
+      difficulty: Math.min(4, 1 + chapter + Math.floor(slot / 5)),
       strokes: strokesAllowed,
-      mission: "",
-      hintTitle: hints[type][0],
-      hint: hints[type][1],
-      parTime: 16 + chapter * 4 + slot,
+      mission,
+      hintTitle,
+      hint,
+      parTime: 14 + chapter * 4 + slot,
       parStrokes: Math.max(1, strokesAllowed - 1),
-      obstacles: expansionObstacles(chapter, slot, flip, type === "spinGear")
+      obstacles: [],
+      ...board
     };
-    if (type === "ballBox") {
-      Object.assign(level, { mission: "把球送進另一側的橙色盒子", ball: [startX, 4.65 + (slot % 4) * 0.22], basket, goal: { type }, bars: slot % 3 === 0 && chapter < 3 ? [{ x: 0.15 * direction, y: -3.45 + (slot % 2) * 0.55, length: 3.4, thickness: 0.16, rotation: 0.16 * direction }] : [] });
-    } else if (type === "target") {
-      const targetY = -4.4 + ((slot % 3) - 1) * 0.55;
-      const targetBar = chapter === 0 ? [{ x: 0.3 * direction, y: 3.65, length: 3.8, thickness: 0.16, rotation: (slot % 2 ? -0.12 : 0.12) * direction }] : [];
-      Object.assign(level, { mission: "讓球碰到橙色靶心", ball: [startX, 4.7 + (slot % 3) * 0.27], goal: { type, x: endX, y: targetY, r: Math.max(0.4, 0.58 - chapter * 0.035) }, bars: targetBar });
-    } else if (type === "wall") {
-      const side = startX > 0 ? "left" : "right";
-      Object.assign(level, { mission: `讓球碰到${side === "left" ? "左" : "右"}側橙色牆面`, ball: [startX, 4.45 + (slot % 4) * 0.24], goal: { type, side, minY: -4.9 + (slot % 3) * 0.5, maxY: 0.8 + (slot % 2) * 0.6 }, bars: chapter < 2 ? [{ x: -0.5 * direction, y: -1.2 + (slot % 3) * 0.45, length: 4.7 - (slot % 2) * 0.6, thickness: 0.16, rotation: (0.2 + chapter * 0.025) * direction }] : [] });
-    } else if (type === "strokeBox") {
-      const cupSide = (chapter + slot) % 2 === 0 ? 1 : -1;
-      const cup = cupSide > 0 ? [2.7, 4.05, -6.2, -5.0] : [-4.05, -2.7, -6.2, -5.0];
-      const zoneX = (cup[0] + cup[1]) / 2;
-      Object.assign(level, { mission: "把手繪物件送進橙色杯子", ball: null, basket: cup, goal: { type }, noDraw: [{ x: zoneX, y: -4.75, w: 2.1 + chapter * 0.08, h: 3.0 + (slot % 3) * 0.22 }], bars: chapter > 0 ? [{ x: 0.25 * direction, y: -1.7 - (slot % 3) * 0.38, length: 3.7 + (chapter % 2) * 0.35, thickness: 0.16, rotation: -0.2 * direction }] : [] });
-    } else {
-      Object.assign(level, { mission: "用手繪物撞動碰撞式轉盤", ball: null, goal: { type, speed: 0.45 + chapter * 0.07 }, bars: chapter >= 3 ? [{ x: -2.6 * direction, y: 1.5, length: 2.8, thickness: 0.15, rotation: -0.25 * direction }] : [] });
-    }
-    return level;
   }));
 }
 
@@ -201,6 +238,7 @@ function ring(x, y, outer, inner, mat = white) {
   const object = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 48), mat);
   object.position.set(x, y, 0);
   gameRoot.add(object);
+  return object;
 }
 
 function bar(x, y, length, thickness, rotation = 0, mat = white, physical = false) {
@@ -284,6 +322,8 @@ function clearScene() {
   circleObstacles.length = 0;
   staticSegments.length = 0;
   gears.length = 0;
+  checkpointHits.clear();
+  checkpointMarkers = [];
 }
 
 function createScene(level) {
@@ -310,6 +350,14 @@ function createScene(level) {
   if (target) {
     ring(target.x, target.y, target.r + 0.12, target.r, orange);
     disc(target.x, target.y, target.r * 0.32, orange, -0.02);
+  }
+  if (level.goal?.type === "checkpoints") {
+    level.goal.targets.forEach((point, index) => {
+      checkpointMarkers.push({ index, ring: ring(point.x, point.y, point.r + 0.12, point.r, orange), dot: disc(point.x, point.y, point.r * 0.3, orange, -0.02) });
+    });
+  }
+  if (level.goal?.type === "ground") {
+    bar((level.goal.minX + level.goal.maxX) / 2, WORLD.bottom + 0.1, level.goal.maxX - level.goal.minX, 0.14, 0, orange, false);
   }
   if (level.goal?.type === "wall") {
     const x = level.goal.side === "left" ? WORLD.left + 0.08 : WORLD.right - 0.08;
@@ -525,6 +573,8 @@ function resetGame() {
   if (ball) ball.position.set(ballStart.x, ballStart.y, 0.2);
   ballVelocity.set(0, 0);
   gearTime = 0;
+  checkpointHits.clear();
+  checkpointMarkers.forEach(marker => { marker.ring.material = orange; marker.dot.material = orange; });
   gears.forEach(gear => {
     gear.group.rotation.z = 0;
     gear.angularVelocity = gear.mode === "constant" ? gear.angularVelocity : 0;
@@ -780,6 +830,17 @@ function checkGoal() {
   if (goal.type === "ballBox" && ball && basket && ball.position.x > basket.left + BALL_RADIUS && ball.position.x < basket.right - BALL_RADIUS && ball.position.y < basket.top && ball.position.y > basket.bottom) return win();
   if (goal.type === "strokeBox" && basket && strokes.some(body => strokeWorldPoints(body).every(point => point.x > basket.left + LINE_RADIUS && point.x < basket.right - LINE_RADIUS && point.y > basket.bottom + LINE_RADIUS && point.y < basket.top - LINE_RADIUS))) return win();
   if (goal.type === "target" && ball && new THREE.Vector2(ball.position.x, ball.position.y).distanceTo(new THREE.Vector2(goal.x, goal.y)) < goal.r) return win();
+  if (goal.type === "checkpoints" && ball) {
+    const nextIndex = checkpointHits.size;
+    const point = goal.targets[nextIndex];
+    if (point && new THREE.Vector2(ball.position.x, ball.position.y).distanceTo(new THREE.Vector2(point.x, point.y)) < point.r) {
+        checkpointHits.add(nextIndex);
+        const marker = checkpointMarkers[nextIndex];
+        if (marker) marker.ring.material = marker.dot.material = orangeDark;
+    }
+    if (checkpointHits.size === goal.targets.length) return win();
+  }
+  if (goal.type === "ground" && ball && ball.position.y <= WORLD.bottom + BALL_RADIUS + 0.12 && ball.position.x >= goal.minX && ball.position.x <= goal.maxX) return win();
   if (goal.type === "wall" && ball) {
     const touchedSide = goal.side === "left" ? ball.position.x <= WORLD.left + BALL_RADIUS + 0.18 : ball.position.x >= WORLD.right - BALL_RADIUS - 0.18;
     if (touchedSide && ball.position.y >= goal.minY && ball.position.y <= goal.maxY) return win();

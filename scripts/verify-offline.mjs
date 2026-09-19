@@ -17,11 +17,15 @@ assert.equal(chapters.length, 5, "five new chapters are present");
 assert.ok(chapters.every(chapter => chapter.levels.length === 10), "each new chapter contains ten named levels");
 assert.equal(baseLevelCount + chapters.reduce((sum, chapter) => sum + chapter.levels.length, 0), 62, "the campaign contains 62 levels total");
 
-const goalBlock = source.match(/const expansionGoalPatterns = \[([\s\S]*?)\n\];/)?.[1] ?? "";
-const goalTypes = new Set([...goalBlock.matchAll(/"(ballBox|target|wall|strokeBox|spinGear)"/g)].map(([, type]) => type));
-assert.equal(goalTypes.size, 5, "the expansion rotates through five goal types");
+const boardBlock = source.match(/const expansionBoards = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+assert.ok(boardBlock, "hand-authored expansion board recipes are present");
+const authoredBoardCount = [...boardBlock.matchAll(/\b(?:boxBoard|targetBoard|wallBoard|strokeCupBoard|groundBoard|routeBoard|spinBoard)\(/g)].length;
+assert.equal(authoredBoardCount, 50, "all 50 expansion levels have an explicit authored board recipe");
+const goalTypes = new Set([...source.matchAll(/type: "(ballBox|target|wall|strokeBox|spinGear|ground|checkpoints)"/g)].map(([, type]) => type));
+assert.equal(goalTypes.size, 7, "the game supports seven distinct goal types");
+assert.match(source, /checkpointHits\.size === goal\.targets\.length/, "sequential route goals complete only after all checkpoints");
+assert.match(source, /goal\.type === "ground"/, "marked ground landing goals are evaluated");
 assert.match(source, /parStrokes: Math\.max\(1, strokesAllowed - 1\)/, "the third-star stroke threshold requires a better-than-maximum solution");
-assert.match(source, /chapter === 0/, "the target platform layout avoids later gear clusters");
 assert.match(source, /const rimSegments = 40/, "ring gears have physical rim collision segments");
 assert.match(source, /unlocked === 12 && levels\.length > 12 && Number\(savedStars\[11\]\) > 0/, "legacy progress advances only after level 12 was cleared");
 
@@ -38,4 +42,4 @@ assert.ok(inlineScript.endsWith(escapedBundle.slice(-200)), "standalone HTML emb
 assert.ok(!htmlShell.includes('src="./game.bundle.js"') && !htmlShell.includes('href="./styles.css"'), "download is a single self-contained HTML file");
 assert.ok((await stat(new URL("../dist/index.html", import.meta.url))).size > 400_000, "standalone HTML is present and non-empty");
 
-console.log(JSON.stringify({ levels: 62, originalLevels: baseLevelCount, chapters: chapters.map(chapter => ({ name: chapter.title, levels: chapter.levels.length })), expansionGoalTypes: [...goalTypes], standaloneHtmlBytes: (await stat(new URL("../dist/index.html", import.meta.url))).size }));
+console.log(JSON.stringify({ levels: 62, originalLevels: baseLevelCount, authoredExpansionBoards: authoredBoardCount, chapters: chapters.map(chapter => ({ name: chapter.title, levels: chapter.levels.length })), goalTypes: [...goalTypes], standaloneHtmlBytes: (await stat(new URL("../dist/index.html", import.meta.url))).size }));

@@ -1,0 +1,7 @@
+.gradle/
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+.codex-remote-attachments/
+brain-it-out-*.zip

@@ -84,18 +84,24 @@ try {
   });
   const evaluatePage = async expression => {
     const response = await sendPage("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true });
-    if (response.exceptionDetails) throw new Error(response.exceptionDetails.text);
+    if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails));
     return response.result.value;
   };
 
   await sendPage("Runtime.enable");
   await sendPage("Page.enable");
   await sendPage("Emulation.setDeviceMetricsOverride", { width: 412, height: 915, deviceScaleFactor: 2.625, mobile: true });
+  await sendPage("Page.addScriptToEvaluateOnNewDocument", { source: `
+    window.__smokeErrors = [];
+    window.addEventListener('error', event => window.__smokeErrors.push(event.message));
+    window.addEventListener('unhandledrejection', event => window.__smokeErrors.push(String(event.reason)));
+    if (location.protocol === 'file:') localStorage.setItem('brain-physics-unlocked', '62');
+  ` });
   const gameUrl = pathToFileURL(resolve("dist/index.html")).href;
   await sendPage("Page.navigate", { url: gameUrl });
 
   for (let attempt = 0; attempt < 100; attempt++) {
-    if (await evaluatePage("document.documentElement.dataset.gameReady === 'true'")) break;
+    if (await evaluatePage("document.documentElement?.dataset.gameReady === 'true'")) break;
     await delay(50);
   }
 
@@ -115,6 +121,24 @@ try {
   assert.equal(menu.cards, 62, "all 62 level cards rendered");
   assert.equal(menu.firstLevel, "0", "the first level is present");
   assert.ok(menu.firstVisible && menu.gridHeight > 0, "the level grid is visible on a phone viewport");
+
+  const scenes = await evaluatePage(`(async () => {
+    const missions = [];
+    for (let index = 0; index < 62; index++) {
+      const card = document.querySelector('.level-card[data-level="' + index + '"]');
+      if (!card || card.disabled) throw new Error('level card unavailable: ' + (index + 1));
+      card.click();
+      const mission = document.querySelector('#missionText')?.textContent?.trim();
+      if (!mission || document.querySelector('#gameApp').classList.contains('hidden')) throw new Error('level did not open: ' + (index + 1));
+      missions.push(mission);
+      document.querySelector('#levelMenuButton').click();
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    return { opened: missions.length, distinctMissions: new Set(missions).size, errors: window.__smokeErrors };
+  })()`);
+  assert.equal(scenes.opened, 62, "all 62 level scenes can be opened on a phone viewport");
+  assert.ok(scenes.distinctMissions >= 7, "the campaign includes all seven goal types");
+  assert.deepEqual(scenes.errors, [], "opening every level produces no browser errors");
 
   assert.equal(await evaluatePage("document.querySelector('.level-card[data-level=\"0\"]').click(); !document.querySelector('#gameApp').classList.contains('hidden')"), true, "the first level opens");
   await delay(100);
@@ -136,7 +160,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();

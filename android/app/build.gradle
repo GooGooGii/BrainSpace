@@ -1,0 +1,31 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.googoogii.brainspace"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.googoogii.brainspace"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    sourceSets {
+        main {
+            // The web game is already a self-contained offline HTML build.
+            // Keeping the dist directory as the asset source avoids two copies
+            // of the 500 KB bundle and makes every Android build use the latest
+            // verified web version.
+            assets.srcDirs = ["../../dist"]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
