@@ -282,6 +282,35 @@ try {
   assert.equal(goalConditionRegression.length, 8, "all seven gameplay goals and the draw tutorial have completion fixtures");
   assert.ok(goalConditionRegression.every(result => result.finished), `every goal type can register a valid win: ${JSON.stringify(goalConditionRegression)}`);
 
+  const turntableGoalRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(7);
+    return debug.testTurntableThenCupGoal();
+  })()`);
+  assert.deepEqual(turntableGoalRegression, {
+    cupAloneWon: false,
+    spinAfterCupWon: false,
+    spinRegistered: true,
+    leftCupAfterSpin: true,
+    bothInOrderWon: true
+  }, `level 8 requires the turntable to spin before the ball enters the cup: ${JSON.stringify(turntableGoalRegression)}`);
+
+  const turntablePhysicsRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const ramps = [
+      [[1.55, 1.7], [3.4, 3.3]],
+      [[1.45, 2.0], [3.4, 2.8]],
+      [[1.4, 2.0], [3.5, 3.7]]
+    ];
+    return ramps.map(points => {
+      debug.loadLevel(7);
+      debug.addTestStroke(points);
+      const state = debug.advancePhysics(1200);
+      return { points, spinRecorded: state.objectiveProgress.gearSpinSatisfied, ball: state.ball, speed: state.gears[0]?.speed };
+    });
+  })()`);
+  assert.ok(turntablePhysicsRegression.some(result => result.spinRecorded), `a hand-drawn ramp can physically start the impact-driven turntable: ${JSON.stringify(turntablePhysicsRegression)}`);
+
   const dynamicPlay = await evaluatePage(`(() => {
     const card = document.querySelector('.level-card[data-level="62"]');
     card.click();
@@ -410,7 +439,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, turntableGoalRegression, turntablePhysicsRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();

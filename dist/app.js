@@ -64,6 +64,8 @@ let accumulator = 0;
 let gearTime = 0;
 let currentLevelIndex = 0;
 let ballStart = new THREE.Vector2(-2.25, 5.55);
+let gearSpinGoalSatisfied = false;
+let ballOutsideAfterGearSpin = false;
 
 const circleObstacles = [];
 const staticSegments = [];
@@ -375,7 +377,7 @@ const levels = [
   { name: "越過高牆", difficulty: 2, strokes: 2, mission: "讓球越過中央牆進盒子", hintTitle: "先接，再導向", hint: "不要只畫一條長斜線；想想如何讓物件的重心替你改變角度。", ball: [-3.1, 5.1], basket: [2.75, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 15, parStrokes: 2, bars: [{ x: 0.3, y: -2.9, length: 5.1, thickness: 0.18, rotation: Math.PI / 2 }], obstacles: [] },
   { name: "穿過窄門", difficulty: 2, strokes: 2, mission: "讓球穿過缺口碰到目標", hintTitle: "控制落下的方向", hint: "上下兩道牆之間只有一個入口，短而重的形狀比長線更好控制。", ball: [-3.2, 4.9], goal: { type: "target", x: 3.4, y: -4.7, r: 0.58 }, parTime: 16, parStrokes: 2, bars: [{ x: 0.5, y: 2.8, length: 5.2, thickness: 0.16, rotation: 0 }, { x: -1.2, y: -1.3, length: 5.4, thickness: 0.16, rotation: 0 }], obstacles: [{ style: "cross", x: 1.5, y: 0.5, r: 0.62, mode: "fixed" }] },
   { name: "喚醒轉盤", difficulty: 2, strokes: 1, mission: "讓白色轉盤轉起來", hintTitle: "撞偏一點", hint: "撞中心只會推，不會轉；讓重物打在轉盤外側。", ball: null, goal: { type: "spinGear", speed: 0.5 }, parTime: 10, parStrokes: 1, obstacles: [{ style: "cross", x: 0, y: -1.4, r: 0.9, mode: "impact", damping: 0.55 }] },
-  { name: "借輪轉向", difficulty: 3, strokes: 2, mission: "撞動轉盤，再把球送進左杯", hintTitle: "先啟動機關", hint: "碰撞式轉盤會慢慢減速；先讓落下物撞動它，再利用旋轉方向導球。", ball: [3.0, 5.2], basket: [-4.0, -2.65, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 20, parStrokes: 2, obstacles: [{ style: "wheel", x: 0.8, y: 0.8, r: 0.88, mode: "impact", damping: 0.5 }, { style: "cross", x: -1.7, y: -2.5, r: 0.6, mode: "fixed" }] },
+  { name: "借輪轉向", difficulty: 3, strokes: 2, mission: "撞動轉盤，再把球送進左杯", hintTitle: "先啟動機關", hint: "先讓碰撞式轉盤達到啟動速度，再讓球進左側橙杯；球必須在轉盤啟動後進杯，單獨入杯不算。", ball: [3.0, 5.2], basket: [-4.0, -2.65, -6.2, -5.0], goal: { type: "ballBox", requiresGearSpin: 0.5 }, parTime: 20, parStrokes: 2, obstacles: [{ style: "wheel", x: 0.8, y: 0.8, r: 0.88, mode: "impact", damping: 0.5 }, { style: "cross", x: -1.7, y: -2.5, r: 0.6, mode: "fixed" }] },
   { name: "逆向輸送", difficulty: 3, strokes: 2, mission: "利用恆速齒輪把球送往右側", hintTitle: "碰哪一側很重要", hint: "齒輪上下兩側的推動方向相反，先觀察再畫導軌。", ball: [-3.25, 5.25], basket: [2.75, 4.05, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 18, parStrokes: 2, obstacles: [{ style: "wheel", x: -0.8, y: 0.8, r: 0.9, mode: "constant", speed: -1.05 }, { style: "cross", x: 1.8, y: -2.3, r: 0.62, mode: "fixed" }] },
   { name: "從禁區外投放", difficulty: 3, strokes: 2, mission: "讓手繪物穿過障礙落入杯中", hintTitle: "畫一個會翻身的形狀", hint: "禁畫區封住直線路徑，利用偏心物件落地後的翻轉。", ball: null, basket: [2.7, 4.0, -6.2, -5.0], goal: { type: "strokeBox" }, noDraw: [{ x: 3.35, y: -4.8, w: 2.1, h: 3.2 }], parTime: 18, parStrokes: 2, bars: [{ x: 1.1, y: -2.2, length: 4.5, thickness: 0.16, rotation: -0.25 }], obstacles: [{ style: "cross", x: -1.2, y: 0.4, r: 0.7, mode: "fixed" }] },
   { name: "抓準節奏", difficulty: 4, strokes: 3, mission: "穿過忽快忽慢的雙輪", hintTitle: "等待也是解法", hint: "變速齒輪會加速、減速甚至反轉；下筆的時機也是解法之一。", ball: [0, 5.45], basket: [-0.68, 0.68, -6.2, -5.0], goal: { type: "ballBox" }, parTime: 24, parStrokes: 3, obstacles: [{ style: "wheel", x: -1.8, y: 1.3, r: 0.85, mode: "variable", baseSpeed: -0.45, amplitude: 1.1, frequency: 1.25 }, { style: "wheel", x: 1.8, y: -1.4, r: 0.85, mode: "variable", baseSpeed: 0.4, amplitude: 1.0, frequency: 0.9 }] },
@@ -810,6 +812,8 @@ function undoStroke() {
 function resetGame() {
   running = false;
   finished = false;
+  gearSpinGoalSatisfied = false;
+  ballOutsideAfterGearSpin = false;
   elapsed = 0;
   accumulator = 0;
   activePointerId = null;
@@ -1441,7 +1445,18 @@ function checkGoal() {
   const goal = levels[currentLevelIndex].goal;
   if (!goal) return;
   if (goal.type === "draw" && strokes.length > 0) return win();
-  if (goal.type === "ballBox" && ball && basket && ball.position.x > basket.left + BALL_RADIUS && ball.position.x < basket.right - BALL_RADIUS && ball.position.y < basket.top && ball.position.y > basket.bottom) return win();
+  if (goal.type === "ballBox" && ball && basket) {
+    const ballInBasket = ball.position.x > basket.left + BALL_RADIUS && ball.position.x < basket.right - BALL_RADIUS && ball.position.y < basket.top && ball.position.y > basket.bottom;
+    if (goal.requiresGearSpin > 0) {
+      if (!gearSpinGoalSatisfied && gears.some(gear => gear.mode === "impact" && Math.abs(gear.angularVelocity) >= goal.requiresGearSpin)) {
+        gearSpinGoalSatisfied = true;
+        ballOutsideAfterGearSpin = !ballInBasket;
+        instructionEl.textContent = "轉盤已啟動！接著把球送進左杯。";
+      }
+      if (gearSpinGoalSatisfied && !ballInBasket) ballOutsideAfterGearSpin = true;
+      if (ballInBasket && gearSpinGoalSatisfied && ballOutsideAfterGearSpin) return win();
+    } else if (ballInBasket) return win();
+  }
   if (goal.type === "strokeBox" && basket && strokes.some(body => strokeWorldPoints(body).every(point => point.x > basket.left + LINE_RADIUS && point.x < basket.right - LINE_RADIUS && point.y > basket.bottom + LINE_RADIUS && point.y < basket.top - LINE_RADIUS))) return win();
   if (goal.type === "target" && ball && new THREE.Vector2(ball.position.x, ball.position.y).distanceTo(new THREE.Vector2(goal.x, goal.y)) < goal.r) return win();
   if (goal.type === "checkpoints" && ball) {
@@ -1657,6 +1672,30 @@ window.__gameDebug = {
     if (!finished) checkGoal();
     return { goal: goal.type, finished };
   },
+  testTurntableThenCupGoal() {
+    const levelIndex = currentLevelIndex;
+    const goal = levels[levelIndex].goal;
+    if (goal?.type !== "ballBox" || !(goal.requiresGearSpin > 0)) throw new Error("current level has no turntable-then-cup goal");
+    const cupX = (basket.left + basket.right) / 2;
+    const cupY = (basket.bottom + basket.top) / 2;
+    ball.position.set(cupX, cupY, 0);
+    checkGoal();
+    const cupAloneWon = finished;
+    const gear = gears.find(item => item.mode === "impact");
+    if (!gear) throw new Error("compound goal has no impact-driven gear");
+    gear.angularVelocity = goal.requiresGearSpin + 0.1;
+    checkGoal();
+    const spinAfterCupWon = finished;
+    const spinRegistered = gearSpinGoalSatisfied;
+    ball.position.set(ballStart.x, ballStart.y, 0);
+    checkGoal();
+    const leftCupAfterSpin = ballOutsideAfterGearSpin;
+    ball.position.set(cupX, cupY, 0);
+    checkGoal();
+    const bothInOrderWon = finished;
+    loadLevel(levelIndex);
+    return { cupAloneWon, spinAfterCupWon, spinRegistered, leftCupAfterSpin, bothInOrderWon };
+  },
   getState() {
     const currentBoard = levels[currentLevelIndex];
     return {
@@ -1669,6 +1708,7 @@ window.__gameDebug = {
       levelName: levels[currentLevelIndex].name,
       chapter: levels[currentLevelIndex].chapter ?? "基礎課程",
       goal: levels[currentLevelIndex].goal?.type ?? null,
+      objectiveProgress: { gearSpinSatisfied: gearSpinGoalSatisfied, ballOutsideAfterGearSpin },
       blueprint: {
         start: currentBoard.ball ?? null,
         basket: currentBoard.basket ?? null,
