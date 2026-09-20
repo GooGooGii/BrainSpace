@@ -66,6 +66,8 @@ const staticSegments = [];
 const gears = [];
 const dynamicBodies = [];
 const magnets = [];
+let gearSegmentsCache = [];
+const activeBodies = [];
 let basket = null;
 let target = null;
 let checkpointHits = new Set();
@@ -437,6 +439,8 @@ function clearScene() {
   gears.length = 0;
   dynamicBodies.length = 0;
   magnets.length = 0;
+  gearSegmentsCache = [];
+  activeBodies.length = 0;
   checkpointHits.clear();
   checkpointMarkers = [];
 }
@@ -535,8 +539,10 @@ function drawPointIsClear(point) {
   for (const obstacle of circleObstacles) {
     if (point.distanceTo(new THREE.Vector2(obstacle.x, obstacle.y)) < obstacle.r + LINE_RADIUS + margin) return false;
   }
-  const obstacleSegments = staticSegments.concat(gears.flatMap(gearWorldSegments));
-  for (const segment of obstacleSegments) {
+  for (const segment of staticSegments) {
+    if (pointSegmentDistance(point, segment.a, segment.b) < segment.radius + LINE_RADIUS + margin) return false;
+  }
+  for (const segment of gearSegmentsCache) {
     if (pointSegmentDistance(point, segment.a, segment.b) < segment.radius + LINE_RADIUS + margin) return false;
   }
   for (const body of strokes.concat(dynamicBodies)) {
@@ -740,6 +746,7 @@ function resetGame() {
     gear.group.rotation.z = 0;
     gear.angularVelocity = gear.mode === "constant" ? gear.angularVelocity : 0;
   });
+  gearSegmentsCache = gears.flatMap(gearWorldSegments);
   dynamicBodies.forEach(body => {
     body.group.position.copy(body.initialPosition);
     body.group.rotation.z = body.initialRotation;
@@ -816,6 +823,151 @@ function resolveBodyContact(body, normal, contact, surfaceVelocity = new THREE.V
   return normalImpulse;
 }
 
+function closestPointsOnSegments(a, b, c, d) {
+  const firstDirection = b.clone().sub(a);
+  const secondDirection = d.clone().sub(c);
+  const betweenOrigins = c.clone().sub(a);
+  const denominator = cross2(firstDirection, secondDirection);
+  if (Math.abs(denominator) > 0.000001) {
+    const firstT = cross2(betweenOrigins, secondDirection) / denominator;
+    const secondT = cross2(betweenOrigins, firstDirection) / denominator;
+    if (firstT >= 0 && firstT <= 1 && secondT >= 0 && secondT <= 1) {
+      const hit = a.clone().addScaledVector(firstDirection, firstT);
+      return { first: hit, second: hit.clone(), distanceSq: 0 };
+    }
+  }
+  const candidates = [
+    { first: a.clone(), second: closestPointOnSegment(a, c, d) },
+    { first: b.clone(), second: closestPointOnSegment(b, c, d) },
+    { first: closestPointOnSegment(c, a, b), second: c.clone() },
+    { first: closestPointOnSegment(d, a, b), second: d.clone() }
+  ];
+  return candidates.reduce((best, candidate) => {
+    const distanceSq = candidate.first.distanceToSquared(candidate.second);
+    return !best || distanceSq < best.distanceSq ? { ...candidate, distanceSq } : best;
+  }, null);
+}
+
+function resolveBodyPair(bodyA, bodyB, contactA, contactB, normal, penetration) {
+  const inverseMassA = 1 / bodyA.mass;
+  const inverseMassB = 1 / bodyB.mass;
+  const inverseMassTotal = inverseMassA + inverseMassB;
+  const correction = Math.max(0, penetration - 0.002) * 0.78 / inverseMassTotal;
+  bodyA.group.position.x += normal.x * correction * inverseMassA;
+  bodyA.group.position.y += normal.y * correction * inverseMassA;
+  bodyB.group.position.x -= normal.x * correction * inverseMassB;
+  bodyB.group.position.y -= normal.y * correction * inverseMassB;
+
+  const contact = contactA.clone().add(contactB).multiplyScalar(0.5);
+  const armA = contact.clone().sub(new THREE.Vector2(bodyA.group.position.x, bodyA.group.position.y));
+  const armB = contact.clone().sub(new THREE.Vector2(bodyB.group.position.x, bodyB.group.position.y));
+  const relativeVelocity = bodyPointVelocity(bodyA, contact).sub(bodyPointVelocity(bodyB, contact));
+  const normalSpeed = relativeVelocity.dot(normal);
+  if (normalSpeed >= 0) return;
+
+  const armCrossNormalA = cross2(armA, normal);
+  const armCrossNormalB = cross2(armB, normal);
+  const denominator = inverseMassTotal
+    + armCrossNormalA * armCrossNormalA / bodyA.inertia
+    + armCrossNormalB * armCrossNormalB / bodyB.inertia;
+  const impulse = -(1 + 0.18) * normalSpeed / denominator;
+  bodyA.velocity.addScaledVector(normal, impulse * inverseMassA);
+  bodyB.velocity.addScaledVector(normal, -impulse * inverseMassB);
+  bodyA.angularVelocity += armCrossNormalA * impulse / bodyA.inertia;
+  bodyB.angularVelocity -= armCrossNormalB * impulse / bodyB.inertia;
+
+  const tangent = relativeVelocity.clone().addScaledVector(normal, -normalSpeed);
+  if (tangent.lengthSq() > 0.000001) {
+    tangent.normalize();
+    const armCrossTangentA = cross2(armA, tangent);
+    const armCrossTangentB = cross2(armB, tangent);
+    const tangentDenominator = inverseMassTotal
+      + armCrossTangentA * armCrossTangentA / bodyA.inertia
+      + armCrossTangentB * armCrossTangentB / bodyB.inertia;
+    const frictionImpulse = THREE.MathUtils.clamp(
+      -relativeVelocity.dot(tangent) / tangentDenominator,
+      -0.42 * impulse,
+      0.42 * impulse
+    );
+    bodyA.velocity.addScaledVector(tangent, frictionImpulse * inverseMassA);
+    bodyB.velocity.addScaledVector(tangent, -frictionImpulse * inverseMassB);
+    bodyA.angularVelocity += armCrossTangentA * frictionImpulse / bodyA.inertia;
+    bodyB.angularVelocity -= armCrossTangentB * frictionImpulse / bodyB.inertia;
+  }
+}
+
+function collideBodyPair(bodyA, bodyB, segmentsA, segmentsB) {
+  let deepest = null;
+  const broadphasePadding = LINE_RADIUS * 2;
+  for (const first of segmentsA) {
+    for (const second of segmentsB) {
+      if (first.maxX + broadphasePadding < second.minX
+        || second.maxX + broadphasePadding < first.minX
+        || first.maxY + broadphasePadding < second.minY
+        || second.maxY + broadphasePadding < first.minY) continue;
+      const closest = closestPointsOnSegments(
+        first.a, first.b,
+        second.a, second.b
+      );
+      const distance = Math.sqrt(closest.distanceSq);
+      const penetration = LINE_RADIUS * 2 - distance;
+      if (penetration <= 0 || (deepest && penetration <= deepest.penetration)) continue;
+      const delta = closest.first.clone().sub(closest.second);
+      if (delta.lengthSq() < 0.000001) {
+        delta.set(bodyA.group.position.x - bodyB.group.position.x, bodyA.group.position.y - bodyB.group.position.y);
+        if (delta.lengthSq() < 0.000001) delta.set(0, 1);
+      }
+      deepest = {
+        contactA: closest.first,
+        contactB: closest.second,
+        normal: delta.normalize(),
+        penetration
+      };
+    }
+  }
+  if (deepest) resolveBodyPair(bodyA, bodyB, deepest.contactA, deepest.contactB, deepest.normal, deepest.penetration);
+}
+
+function collideMovingBodies(bodies) {
+  const collisionData = bodies.map(body => {
+    const points = strokeWorldPoints(body);
+    const segments = [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (let index = 1; index < points.length; index++) {
+      const a = points[index - 1];
+      const b = points[index];
+      const segmentMinX = Math.min(a.x, b.x);
+      const segmentMaxX = Math.max(a.x, b.x);
+      const segmentMinY = Math.min(a.y, b.y);
+      const segmentMaxY = Math.max(a.y, b.y);
+      minX = Math.min(minX, segmentMinX);
+      maxX = Math.max(maxX, segmentMaxX);
+      minY = Math.min(minY, segmentMinY);
+      maxY = Math.max(maxY, segmentMaxY);
+      segments.push({ a, b, minX: segmentMinX, maxX: segmentMaxX, minY: segmentMinY, maxY: segmentMaxY });
+    }
+    return { segments, minX, maxX, minY, maxY };
+  });
+  for (let firstIndex = 0; firstIndex < bodies.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < bodies.length; secondIndex++) {
+      const first = collisionData[firstIndex];
+      const second = collisionData[secondIndex];
+      const firstSegments = first.segments;
+      const secondSegments = second.segments;
+      if (!firstSegments.length || !secondSegments.length) continue;
+      const padding = LINE_RADIUS * 2;
+      if (first.maxX + padding < second.minX
+        || second.maxX + padding < first.minX
+        || first.maxY + padding < second.minY
+        || second.maxY + padding < first.minY) continue;
+      collideBodyPair(bodies[firstIndex], bodies[secondIndex], firstSegments, secondSegments);
+    }
+  }
+}
+
 function gearSurfaceVelocity(gear, point) {
   const arm = point.clone().sub(new THREE.Vector2(gear.x, gear.y));
   return new THREE.Vector2(-gear.angularVelocity * arm.y, gear.angularVelocity * arm.x);
@@ -839,11 +991,14 @@ function updateGears(dt) {
     if (gear.mode === "impact") gear.angularVelocity *= Math.exp(-gear.damping * dt);
     gear.group.rotation.z += gear.angularVelocity * dt;
   });
+  // Gear spokes/rims are unchanged during the fixed-step loop, so build their
+  // world-space collision segments once per rendered frame instead of once
+  // for every body and every 120 Hz physics sub-step.
+  gearSegmentsCache = gears.flatMap(gearWorldSegments);
 }
 
 function collideStrokeWithWorld(body) {
   const bounds = visibleBounds();
-  const gearSegments = gears.flatMap(gearWorldSegments);
   for (let iteration = 0; iteration < 2; iteration++) {
     const points = strokeWorldPoints(body);
     const wallContacts = [
@@ -889,7 +1044,7 @@ function collideStrokeWithWorld(body) {
           resolveBodyContact(body, normal, closest);
         }
       }
-      for (const segment of gearSegments) {
+      for (const segment of gearSegmentsCache) {
         const closest = closestPointOnSegment(point, segment.a, segment.b);
         const delta = point.clone().sub(closest);
         const minimum = LINE_RADIUS + segment.radius;
@@ -970,31 +1125,69 @@ function collideBallWithWalls() {
   if (ball.position.y + BALL_RADIUS > bounds.top) { ball.position.y = bounds.top - BALL_RADIUS; ballVelocity.y = -Math.abs(ballVelocity.y) * 0.45; }
 }
 
-function applyMagneticForce(position, velocity, mass, dt) {
-  if (!magnets.length) return;
+function magneticForceAt(position, targetForce) {
+  targetForce.set(0, 0);
   magnets.forEach(magnet => {
     const dx = magnet.x - position.x;
     const dy = magnet.y - position.y;
-    const distanceSq = dx * dx + dy * dy;
-    const distance = Math.sqrt(distanceSq);
+    const distance = Math.sqrt(dx * dx + dy * dy);
     if (distance < 0.0001 || distance > magnet.range) return;
     const falloff = Math.pow(1 - distance / magnet.range, 2);
-    const acceleration = magnet.pull * magnet.strength * falloff / Math.max(0.25, mass);
-    velocity.x += dx / distance * acceleration * dt;
-    velocity.y += dy / distance * acceleration * dt;
+    const force = magnet.pull * magnet.strength * falloff;
+    targetForce.x += dx / distance * force;
+    targetForce.y += dy / distance * force;
   });
+  return targetForce;
+}
+
+function applyMagneticForce(position, velocity, mass, dt) {
+  if (!magnets.length) return;
+  const force = magneticForceAt(position, new THREE.Vector2());
+  velocity.addScaledVector(force, dt / Math.max(0.25, mass));
   if (velocity.lengthSq() > 18 * 18) velocity.setLength(18);
 }
 
+function applyMagneticForceToBody(body, dt) {
+  if (!magnets.length || body.localPoints.length === 0) return;
+  const sampleCount = Math.min(8, body.localPoints.length);
+  const angle = body.group.rotation.z;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const force = new THREE.Vector2();
+  const sampleForce = new THREE.Vector2();
+  const arm = new THREE.Vector2();
+  const worldPoint = new THREE.Vector2();
+  let torque = 0;
+  for (let index = 0; index < sampleCount; index++) {
+    const pointIndex = sampleCount === 1
+      ? 0
+      : Math.round(index * (body.localPoints.length - 1) / (sampleCount - 1));
+    const localPoint = body.localPoints[pointIndex];
+    worldPoint.set(
+      body.group.position.x + localPoint.x * cos - localPoint.y * sin,
+      body.group.position.y + localPoint.x * sin + localPoint.y * cos
+    );
+    magneticForceAt(worldPoint, sampleForce);
+    const weight = 1 / sampleCount;
+    force.addScaledVector(sampleForce, weight);
+    arm.set(worldPoint.x - body.group.position.x, worldPoint.y - body.group.position.y);
+    torque += cross2(arm, sampleForce) * weight;
+  }
+  body.velocity.addScaledVector(force, dt / Math.max(0.25, body.mass));
+  body.angularVelocity += torque * dt / body.inertia;
+  if (body.velocity.lengthSq() > 18 * 18) body.velocity.setLength(18);
+  body.angularVelocity = THREE.MathUtils.clamp(body.angularVelocity, -16, 16);
+}
+
 function physicsStep(dt) {
-  dynamicBodies.forEach(body => {
-    applyMagneticForce(body.group.position, body.velocity, body.mass, dt);
+  activeBodies.length = 0;
+  dynamicBodies.forEach(body => activeBodies.push(body));
+  strokes.forEach(body => activeBodies.push(body));
+  activeBodies.forEach(body => {
+    applyMagneticForceToBody(body, dt);
     updateStrokeBody(body, dt);
   });
-  strokes.forEach(body => {
-    applyMagneticForce(body.group.position, body.velocity, body.mass, dt);
-    updateStrokeBody(body, dt);
-  });
+  collideMovingBodies(activeBodies);
   if (ball) {
     applyMagneticForce(ball.position, ballVelocity, BALL_MASS, dt);
     ballVelocity.y -= GRAVITY * dt;
@@ -1004,8 +1197,8 @@ function physicsStep(dt) {
     collideBallWithWalls();
     circleObstacles.forEach(collideBallCircle);
     staticSegments.forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4));
-    gears.flatMap(gearWorldSegments).forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4, null, segment.gear));
-    strokes.concat(dynamicBodies).forEach(body => {
+    gearSegmentsCache.forEach(segment => collideBallSegment(segment.a, segment.b, segment.radius, 0.4, null, segment.gear));
+    activeBodies.forEach(body => {
       const points = strokeWorldPoints(body);
       for (let i = 1; i < points.length; i++) collideBallSegment(points[i - 1], points[i], LINE_RADIUS, 0.32, body);
     });
@@ -1129,6 +1322,8 @@ document.querySelector("#gotItButton").addEventListener("click", () => hintDialo
 function resize() {
   const rect = mount.getBoundingClientRect();
   if (rect.width < 10 || rect.height < 10) return;
+  const pixelRatioLimit = rect.width < 600 ? 1.5 : 2;
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, pixelRatioLimit));
   renderer.setSize(rect.width, rect.height, false);
   const viewportAspect = rect.width / Math.max(rect.height, 1);
   const worldAspect = (WORLD.right - WORLD.left) / (WORLD.top - WORLD.bottom);
