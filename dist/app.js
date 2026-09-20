@@ -1632,6 +1632,31 @@ window.__gameDebug = {
     for (let index = 0; index < count; index++) physicsStep(FIXED_STEP);
     return this.getState();
   },
+  triggerGoalForTest() {
+    const goal = levels[currentLevelIndex].goal;
+    if (!goal) throw new Error("current level has no goal");
+    if (goal.type === "draw") this.addTestStroke([[-0.8, 0], [0.8, 0]]);
+    else if (goal.type === "ballBox") ball.position.set((basket.left + basket.right) / 2, (basket.bottom + basket.top) / 2, 0);
+    else if (goal.type === "strokeBox") {
+      const x = (basket.left + basket.right) / 2;
+      const y = (basket.bottom + basket.top) / 2;
+      this.addTestStroke([[x - 0.16, y], [x + 0.16, y]]);
+    } else if (goal.type === "target") ball.position.set(goal.x, goal.y, 0);
+    else if (goal.type === "wall") ball.position.set(goal.side === "left" ? WORLD.left + BALL_RADIUS + 0.1 : WORLD.right - BALL_RADIUS - 0.1, (goal.minY + goal.maxY) / 2, 0);
+    else if (goal.type === "ground") ball.position.set((goal.minX + goal.maxX) / 2, WORLD.bottom + BALL_RADIUS - 0.02, 0);
+    else if (goal.type === "checkpoints") {
+      for (const point of goal.targets) {
+        ball.position.set(point.x, point.y, 0);
+        checkGoal();
+        if (finished) break;
+      }
+    } else if (goal.type === "spinGear") {
+      const gear = gears.find(item => item.mode === "impact");
+      if (gear) gear.angularVelocity = goal.speed + 0.1;
+    }
+    if (!finished) checkGoal();
+    return { goal: goal.type, finished };
+  },
   getState() {
     const currentBoard = levels[currentLevelIndex];
     return {
@@ -1645,7 +1670,15 @@ window.__gameDebug = {
       chapter: levels[currentLevelIndex].chapter ?? "基礎課程",
       goal: levels[currentLevelIndex].goal?.type ?? null,
       blueprint: {
-        routeBars: (currentBoard.bars ?? []).map(({ x, y, length, rotation = 0 }) => [x, y, length, rotation])
+        start: currentBoard.ball ?? null,
+        basket: currentBoard.basket ?? null,
+        goal: currentBoard.goal ?? null,
+        routeBars: (currentBoard.bars ?? []).map(({ x, y, length, rotation = 0 }) => [x, y, length, rotation]),
+        dynamics: currentBoard.dynamics ?? [],
+        obstacles: currentBoard.obstacles ?? [],
+        magnets: currentBoard.magnets ?? [],
+        noDraw: currentBoard.noDraw ?? [],
+        strokesAllowed: currentBoard.strokes
       },
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
       magnets: magnets.map(({ x, y, pull, strength, range }) => ({ x, y, pull, strength, range })),

@@ -125,6 +125,7 @@ try {
   const scenes = await evaluatePage(`(async () => {
     const missions = [];
     const lateRoutes = [];
+    const blueprints = [];
     for (let index = 0; index < 100; index++) {
       const card = document.querySelector('.level-card[data-level="' + index + '"]');
       if (!card || card.disabled) throw new Error('level card unavailable: ' + (index + 1));
@@ -132,9 +133,111 @@ try {
       const mission = document.querySelector('#missionText')?.textContent?.trim();
       if (!mission || document.querySelector('#gameApp').classList.contains('hidden')) throw new Error('level did not open: ' + (index + 1));
       missions.push(mission);
-      if (index >= 62) lateRoutes.push(window.__gameDebug.getState().blueprint.routeBars);
+      const blueprint = window.__gameDebug.getState().blueprint;
+      blueprints.push(blueprint);
+      if (index >= 62) lateRoutes.push(blueprint.routeBars);
       document.querySelector('#levelMenuButton').click();
       await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    const world = { left: -5, right: 5, bottom: -7, top: 7, ballRadius: 0.28 };
+    const issues = [];
+    const pointSegmentDistance = (point, a, b) => {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lengthSq = dx * dx + dy * dy;
+      const t = lengthSq ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSq)) : 0;
+      return Math.hypot(point.x - a.x - dx * t, point.y - a.y - dy * t);
+    };
+    const segmentOf = (item, thickness = 0.16) => {
+      const rotation = item.rotation ?? 0;
+      const halfX = Math.cos(rotation) * item.length / 2;
+      const halfY = Math.sin(rotation) * item.length / 2;
+      return {
+        a: { x: item.x - halfX, y: item.y - halfY },
+        b: { x: item.x + halfX, y: item.y + halfY },
+        radius: (item.thickness ?? thickness) / 2
+      };
+    };
+    const rectFits = (left, right, bottom, top) => left >= world.left && right <= world.right && bottom >= world.bottom && top <= world.top;
+    const barFits = (item, defaultThickness = 0.16) => {
+      const halfX = Math.abs(Math.cos(item.rotation ?? 0) * item.length / 2) + (item.thickness ?? defaultThickness) / 2;
+      const halfY = Math.abs(Math.sin(item.rotation ?? 0) * item.length / 2) + (item.thickness ?? defaultThickness) / 2;
+      return rectFits(item.x - halfX, item.x + halfX, item.y - halfY, item.y + halfY);
+    };
+    const worldPoint = (x, y, radius = 0) => rectFits(x - radius, x + radius, y - radius, y + radius);
+    for (const [index, board] of blueprints.entries()) {
+      const addIssue = reason => issues.push(String(index + 1) + ':' + reason);
+      const goal = board.goal;
+      if (!goal || !(board.strokesAllowed > 0)) addIssue('missing-goal-or-draw-budget');
+      if (board.start && !worldPoint(board.start[0], board.start[1], world.ballRadius)) addIssue('ball-start-outside-world');
+      if (board.routeBars.some(bar => !barFits({ x: bar[0], y: bar[1], length: bar[2], rotation: bar[3] ?? 0 }))) addIssue('rail-outside-world');
+      if (board.dynamics.some(bar => !barFits(bar, 0.15))) addIssue('moving-support-outside-world');
+      if (board.basket && !rectFits(...board.basket)) addIssue('basket-outside-world');
+      if (board.noDraw.some(zone => !rectFits(zone.x - zone.w / 2, zone.x + zone.w / 2, zone.y - zone.h / 2, zone.y + zone.h / 2))) addIssue('no-draw-zone-outside-world');
+      for (const gear of board.obstacles) {
+        const extent = gear.style === 'wheel' ? gear.r + 0.47 : gear.r * 1.35 + 0.05;
+        if (!worldPoint(gear.x, gear.y, extent)) addIssue('gear-outside-world');
+      }
+      for (const magnet of board.magnets) {
+        if (!worldPoint(magnet.x, magnet.y, (magnet.r ?? 0.42) + 0.14)) addIssue('magnet-outside-world');
+      }
+      if (goal?.type === 'ballBox' && (!board.start || !board.basket || board.basket[1] - board.basket[0] <= world.ballRadius * 2)) addIssue('invalid-ball-cup');
+      if (goal?.type === 'strokeBox' && (!board.basket || !board.noDraw.length)) addIssue('invalid-stroke-cup');
+      if (goal?.type === 'target' && (!board.start || goal.r <= 0 || !worldPoint(goal.x, goal.y, goal.r + 0.12))) addIssue('invalid-target');
+      if (goal?.type === 'wall' && (!board.start || !['left', 'right'].includes(goal.side) || goal.minY >= goal.maxY || goal.minY < world.bottom || goal.maxY > world.top)) addIssue('invalid-wall-target');
+      if (goal?.type === 'ground' && (!board.start || goal.minX >= goal.maxX || goal.minX < world.left || goal.maxX > world.right)) addIssue('invalid-ground-target');
+      if (goal?.type === 'checkpoints' && (!board.start || !goal.targets?.length || goal.targets.some(point => point.r <= 0 || !worldPoint(point.x, point.y, point.r + 0.12)))) addIssue('invalid-checkpoint-route');
+      if (goal?.type === 'spinGear' && (!board.obstacles.some(gear => gear.mode === 'impact') || !(goal.speed > 0))) addIssue('invalid-spin-goal');
+      if (board.start) {
+        const start = { x: board.start[0], y: board.start[1] };
+        for (const rail of board.routeBars.map(values => ({ x: values[0], y: values[1], length: values[2], rotation: values[3] ?? 0 }))) {
+          const segment = segmentOf(rail);
+          if (pointSegmentDistance(start, segment.a, segment.b) < world.ballRadius + segment.radius) addIssue('ball-start-overlaps-rail');
+        }
+        for (const bar of board.dynamics) {
+          const segment = segmentOf(bar, 0.15);
+          if (pointSegmentDistance(start, segment.a, segment.b) < world.ballRadius + segment.radius) addIssue('ball-start-overlaps-moving-support');
+        }
+        for (const gear of board.obstacles) {
+          const dx = start.x - gear.x;
+          const dy = start.y - gear.y;
+          if (gear.style === 'wheel') {
+            if (Math.hypot(dx, dy) < world.ballRadius + gear.r) addIssue('ball-start-overlaps-wheel');
+            for (let spoke = 0; spoke < 10; spoke++) {
+              const angle = spoke / 10 * Math.PI * 2;
+              const cx = Math.cos(angle) * (gear.r + 0.23);
+              const cy = Math.sin(angle) * (gear.r + 0.23);
+              const hx = Math.cos(angle) * 0.24;
+              const hy = Math.sin(angle) * 0.24;
+              if (pointSegmentDistance(start, { x: gear.x + cx - hx, y: gear.y + cy - hy }, { x: gear.x + cx + hx, y: gear.y + cy + hy }) < world.ballRadius + 0.055) addIssue('ball-start-overlaps-wheel-spoke');
+            }
+          } else {
+            if (Math.abs(Math.hypot(dx, dy) - gear.r) < world.ballRadius + 0.045) addIssue('ball-start-overlaps-gear-rim');
+            for (const angle of [0, Math.PI / 2]) {
+              const half = gear.r * 1.35;
+              const axisX = Math.cos(angle) * half;
+              const axisY = Math.sin(angle) * half;
+              if (pointSegmentDistance(start, { x: gear.x - axisX, y: gear.y - axisY }, { x: gear.x + axisX, y: gear.y + axisY }) < world.ballRadius + 0.045) addIssue('ball-start-overlaps-gear-arm');
+            }
+          }
+        }
+      }
+      let clearDrawSamples = 0;
+      for (let x = -4.75; x <= 4.75; x += 0.5) for (let y = -6.75; y <= 6.75; y += 0.5) {
+        if (board.start && Math.hypot(x - board.start[0], y - board.start[1]) < world.ballRadius + 0.2) continue;
+        if (board.noDraw.some(zone => Math.abs(x - zone.x) < zone.w / 2 + 0.12 && Math.abs(y - zone.y) < zone.h / 2 + 0.12)) continue;
+        if (board.routeBars.some(values => {
+          const segment = segmentOf({ x: values[0], y: values[1], length: values[2], rotation: values[3] ?? 0 });
+          return pointSegmentDistance({ x, y }, segment.a, segment.b) < segment.radius + 0.12;
+        })) continue;
+        if (board.dynamics.some(bar => {
+          const segment = segmentOf(bar, 0.15);
+          return pointSegmentDistance({ x, y }, segment.a, segment.b) < segment.radius + 0.12;
+        })) continue;
+        if (board.obstacles.some(gear => Math.hypot(x - gear.x, y - gear.y) < (gear.style === 'wheel' ? gear.r + 0.2 : gear.r * 1.35 + 0.2))) continue;
+        clearDrawSamples++;
+      }
+      if (!clearDrawSamples) addIssue('no-clear-draw-space');
     }
     const insideWorld = lateRoutes.every(route => route.every(([x, y, length, rotation]) => {
       const halfX = Math.abs(Math.cos(rotation) * length / 2);
@@ -148,6 +251,8 @@ try {
       routeComplexities: [...new Set(lateRoutes.map(route => route.length))].sort((a, b) => a - b),
       verticalRouteRails: lateRoutes.flat().filter(([, , , rotation]) => Math.abs(rotation) > 1.2).length,
       lateRoutesInsideWorld: insideWorld,
+      playabilityIssueCount: issues.length,
+      playabilityIssues: issues.slice(0, 20),
       errors: window.__smokeErrors
     };
   })()`);
@@ -157,7 +262,25 @@ try {
   assert.deepEqual(scenes.routeComplexities, [2, 3, 4], "late routes vary between two, three, and four rails");
   assert.ok(scenes.verticalRouteRails >= 8, "some late routes use vertical gates, not only shallow ramps");
   assert.ok(scenes.lateRoutesInsideWorld, "late-game route rails remain within the playable board");
+  assert.equal(scenes.playabilityIssueCount, 0, `all levels pass the structural playability audit: ${JSON.stringify(scenes.playabilityIssues)}`);
   assert.deepEqual(scenes.errors, [], "opening every level produces no browser errors");
+
+  const goalConditionRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const representatives = {};
+    for (let index = 0; index < 100; index++) {
+      debug.loadLevel(index);
+      const type = debug.getState().goal;
+      if (!(type in representatives)) representatives[type] = index;
+    }
+    return Object.entries(representatives).map(([type, index]) => {
+      debug.loadLevel(index);
+      const result = debug.triggerGoalForTest();
+      return { type, level: index + 1, finished: result.finished };
+    });
+  })()`);
+  assert.equal(goalConditionRegression.length, 8, "all seven gameplay goals and the draw tutorial have completion fixtures");
+  assert.ok(goalConditionRegression.every(result => result.finished), `every goal type can register a valid win: ${JSON.stringify(goalConditionRegression)}`);
 
   const dynamicPlay = await evaluatePage(`(() => {
     const card = document.querySelector('.level-card[data-level="62"]');
@@ -287,7 +410,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();
