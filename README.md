@@ -1,7 +1,7 @@
 # BrainSpace
 
 BrainSpace is an offline mobile physics-puzzle game built with Three.js. Draw
-objects with a finger, release them into gravity, and solve 100 progressively
+objects with a finger, release them into gravity, and solve 150 progressively
 arranged levels with walls, targets, cups, gears, variable motion, and route
 checkpoints. Later boards also contain pre-placed supports that fall, rotate,
 and transfer momentum when the ball or a drawn object hits them.

@@ -88,7 +88,12 @@ const expansionChapters = [
   { title: "精密連鎖", names: ["齒輪階梯", "三次反彈", "活輪守門", "偏心入杯", "地面節點", "連鎖靶心", "高速轉盤", "逆向導軌", "輪下落點", "長距離接力"] },
   { title: "容器與反彈", names: ["杯口斜投", "牆角回彈", "窄口靶心", "雙禁區翻身", "落地分流", "重心繞柱", "撞輪入杯", "高牆投放", "三段彈跳", "最後的容器"] },
   { title: "時間機關", names: ["變速起點", "等候缺口", "逆轉靶心", "快輪下杯", "節拍落地", "交錯節點", "轉盤窗口", "雙速長廊", "延遲反彈", "機關倒數"] },
-  { title: "百關終極試煉", names: ["八輪入口", "末段靶心", "牆邊極限", "禁區翻越", "地面狙擊", "五點路線", "最後齒輪", "百關完成"] }
+  { title: "百關里程碑", names: ["八輪入口", "末段靶心", "牆邊極限", "禁區翻越", "地面狙擊", "五點路線", "最後齒輪", "百關突破"] },
+  { title: "磁場導航", names: ["藍極航道", "紅極迴避", "雙極轉向", "懸浮落點", "磁場杯口", "反向牽引", "極性之門", "曲線撞靶", "三區導航", "磁力終站"] },
+  { title: "動態平衡", names: ["搖擺踏板", "偏心天秤", "落橋時機", "活動窄門", "雙板接球", "翻轉支架", "懸臂落點", "連動平台", "重心階梯", "平衡終點"] },
+  { title: "連鎖反應", names: ["第一推力", "齒輪接棒", "三段傳力", "碰撞岔路", "動輪觸發", "反彈鏈條", "磁力接力", "重錘轉向", "四步連鎖", "反應終局"] },
+  { title: "多路解法", names: ["左右皆通", "高路低路", "借牆或借輪", "雙杯迷途", "自由落點", "兩種節奏", "磁場捷徑", "重心抉擇", "開放機關", "萬法歸一"] },
+  { title: "百五十關終極試煉", names: ["終局入口", "極性迷陣", "動態狙擊", "齒輪風暴", "重心深淵", "五段航線", "牆杯抉擇", "磁輪連鎖", "最後考驗", "一百五十"] }
 ];
 const barSpec = (x, y, length, rotation = 0, thickness = 0.16) => ({ x, y, length, thickness, rotation });
 const cross = (x, y, r = 0.62, mode = "fixed", extra = {}) => ({ style: "cross", x, y, r, mode, ...extra });
@@ -168,7 +173,7 @@ const expansionBoards = [
   ]
 ];
 
-// The final 38 boards keep the same physics vocabulary but raise the number
+// The next 38 boards keep the same physics vocabulary but raise the number
 // of interacting steps. Their recipe is indexed explicitly by chapter/slot so
 // the later campaign does not fall back to the old repeated-coordinate loop.
 const lateLayouts = [
@@ -268,6 +273,72 @@ const lateRoutePlans = [
   ]
 ];
 
+// Fifty additional route skeletons for levels 101-150. Each board has its
+// own rail arrangement; the five chapters then layer magnets, moving supports,
+// impact gears, and changing speeds on top of those distinct routes.
+const expertRoutePlans = [
+  [
+    routePlan([-1.7, 3.55, 3.0, -0.21], [1.4, 0.65, 2.7, 0.27], [-0.4, -3.1, 3.5, -0.12]),
+    routePlan([0.65, 3.25, 4.1, 0.12], [-1.8, 0.25, 2.4, -0.32], [1.8, -3.25, 2.7, 0.24]),
+    routePlan([-2.25, 3.45, 2.5, 0.18], [0.15, 0.65, 3.3, 1.39], [2.0, -2.9, 2.4, -0.28]),
+    routePlan([1.55, 3.65, 3.4, -0.14], [-1.25, 1.05, 3.6, 0.2], [0.7, -3.55, 3.9, -0.16]),
+    routePlan([-0.2, 3.25, 4.6, -0.06], [2.05, 0.2, 2.1, 0.34], [-1.65, -3.3, 2.8, 0.22]),
+    routePlan([2.1, 3.45, 2.2, -0.31], [-0.85, 0.85, 4.2, 0.11], [1.65, -2.55, 2.9, -0.27]),
+    routePlan([-2.4, 3.1, 2.0, 0.26], [0.55, 0.35, 2.7, -0.35], [2.1, -3.65, 3.4, 0.09], [-0.35, -1.0, 1.7, 1.46]),
+    routePlan([0.25, 3.8, 4.5, 0.03], [-2.05, 0.4, 2.0, -0.41], [1.95, -0.15, 2.6, 1.4]),
+    routePlan([1.75, 3.2, 3.0, 0.26], [-0.65, 0.25, 3.5, -0.19], [-1.55, -3.4, 2.5, 0.14]),
+    routePlan([-1.35, 3.7, 3.5, 0.29], [1.25, 0.1, 3.8, -0.14])
+  ],
+  [
+    routePlan([-2.05, 3.7, 3.8, -0.13], [1.15, 0.85, 2.4, 1.34], [-0.55, -3.0, 3.7, -0.06]),
+    routePlan([0.9, 3.55, 2.8, 0.35], [-1.55, 0.75, 3.9, -0.11], [1.75, -3.35, 2.5, 0.28], [0.15, -1.65, 1.8, 1.43]),
+    routePlan([-2.35, 3.25, 2.7, -0.34], [0.65, 0.45, 4.0, 0.16], [2.0, -3.15, 3.1, -0.25]),
+    routePlan([1.45, 3.85, 4.0, -0.04], [-0.55, 1.15, 2.0, 1.37], [1.2, -2.8, 2.9, 0.31]),
+    routePlan([-0.15, 1.0, 4.5, -0.08], [-1.55, -3.55, 3.4, 0.21]),
+    routePlan([0.35, 3.35, 4.4, 0.14], [2.15, 0.1, 2.2, -0.37], [-2.0, -2.65, 2.8, 0.27]),
+    routePlan([-2.55, 3.65, 1.9, -0.18], [-0.05, 1.4, 3.5, 0.33], [1.65, -2.5, 3.9, -0.11], [1.45, 0.45, 1.9, 1.42]),
+    routePlan([1.25, 3.45, 2.5, -0.43], [-1.75, 0.05, 2.9, 0.18], [0.55, -3.45, 4.2, 0.08]),
+    routePlan([-0.45, 3.8, 3.9, -0.25], [2.05, 0.65, 2.0, 0.25]),
+    routePlan([-2.25, 3.05, 2.8, 0.3], [0.85, 0.75, 4.1, -0.17], [1.85, -3.6, 2.6, 0.23])
+  ],
+  [
+    routePlan([-1.9, 3.9, 4.2, -0.17], [1.55, 0.8, 2.5, 0.39]),
+    routePlan([1.85, 3.35, 3.1, 0.13], [-1.15, 0.85, 2.6, -0.33], [1.35, -3.55, 4.1, 0.2]),
+    routePlan([-2.3, 2.9, 2.3, 0.43], [0.5, 0.55, 4.3, -0.15], [1.95, -2.85, 2.7, -0.33], [-1.55, -1.25, 1.8, 1.31]),
+    routePlan([0.45, 3.95, 3.9, 0.02], [-1.9, 0.7, 2.2, 0.25], [1.25, -3.3, 3.5, -0.27]),
+    routePlan([-1.1, 3.1, 4.3, -0.28], [1.85, -0.1, 2.8, 0.21], [-1.15, -3.75, 2.7, 0.41], [0.0, -1.8, 1.5, 0.04]),
+    routePlan([1.7, 3.7, 2.6, -0.38], [-0.2, 0.5, 3.8, 1.4], [1.65, -2.9, 2.8, 0.26]),
+    routePlan([-2.5, 3.45, 2.6, 0.23], [0.9, 0.3, 3.0, -0.25]),
+    routePlan([0.1, 3.55, 3.2, 0.3], [-2.05, 0.15, 2.4, -0.21], [1.75, -3.7, 2.8, 0.33]),
+    routePlan([-1.75, 4.0, 3.7, -0.12], [1.65, 0.3, 2.5, 0.43], [-1.9, -3.1, 2.6, -0.28], [0.15, -1.65, 2.1, 1.44]),
+    routePlan([2.1, 3.15, 3.3, -0.27], [-0.7, 1.0, 3.7, 0.09], [0.95, -3.3, 2.8, -0.45])
+  ],
+  [
+    routePlan([-1.5, 3.7, 4.0, -0.2], [1.8, 0.7, 2.5, 0.33], [-0.75, -2.8, 3.6, -0.13], [0.25, -0.85, 1.4, 0.05]),
+    routePlan([0.75, 3.15, 2.6, 0.43], [-1.85, 1.0, 3.8, -0.21], [1.65, -3.5, 3.3, 0.13], [1.05, -1.55, 2.2, 1.37]),
+    routePlan([-2.2, 3.9, 3.0, -0.1], [0.5, 0.2, 2.7, 1.45], [1.6, -3.65, 3.7, -0.29]),
+    routePlan([1.5, 3.6, 4.2, 0.11], [-0.95, 0.45, 2.4, -0.48], [-1.55, -3.25, 2.9, 0.23]),
+    routePlan([-0.6, 3.8, 2.9, -0.33], [2.0, 0.5, 3.2, 0.19], [-1.8, -3.6, 4.1, -0.11]),
+    routePlan([2.0, 3.95, 2.1, 0.25], [-0.35, 0.25, 4.4, -0.13]),
+    routePlan([-2.0, 3.3, 3.9, 0.15], [0.8, 0.05, 2.5, -0.39], [1.9, -3.7, 3.2, 0.28], [-0.85, 1.85, 1.9, 1.46]),
+    routePlan([0.35, 3.85, 4.1, -0.07], [-2.35, 0.6, 2.3, 0.31], [1.7, -3.35, 2.8, -0.37], [-1.9, -1.15, 1.6, 0.03]),
+    routePlan([1.2, 3.5, 3.6, 0.24], [-1.6, 0.2, 3.0, -0.27], [0.2, -3.55, 4.4, 0.06]),
+    routePlan([-1.85, 3.75, 2.8, -0.36], [0.55, 0.55, 4.2, 0.18], [2.0, -2.9, 2.5, -0.31])
+  ],
+  [
+    routePlan([-1.3, 3.75, 4.0, -0.21], [1.85, 0.85, 2.5, 0.33], [-0.7, -2.75, 3.6, -0.13], [0.2, -0.8, 1.5, 0.04]),
+    routePlan([0.9, 3.3, 2.3, 0.44], [-1.8, 0.95, 3.8, -0.2], [1.6, -3.45, 3.4, 0.12], [1.0, -1.5, 2.1, 1.38]),
+    routePlan([-2.15, 3.85, 3.1, -0.09], [0.6, 0.3, 2.8, 1.43], [1.7, -3.7, 3.8, -0.28]),
+    routePlan([1.65, 3.55, 4.2, 0.1], [-0.85, 0.6, 2.5, -0.47], [-1.7, -3.2, 2.8, 0.22]),
+    routePlan([-0.45, 3.85, 3.0, -0.32], [2.0, 0.65, 3.3, 0.18], [-1.85, -3.65, 4.0, -0.1]),
+    routePlan([2.05, 3.9, 2.2, 0.24], [-0.25, 0.4, 4.5, -0.12], [1.45, -3.5, 2.4, 0.35]),
+    routePlan([-1.95, 3.4, 4.0, 0.14], [0.95, 0.2, 2.4, -0.38], [2.05, -3.75, 3.1, 0.27], [-0.75, 1.95, 1.8, 1.45]),
+    routePlan([0.45, 3.8, 4.2, -0.06], [-2.25, 0.75, 2.4, 0.3], [1.75, -3.3, 2.9, -0.36], [-1.95, -1.1, 1.7, 0.02]),
+    routePlan([1.3, 3.45, 3.7, 0.23], [-1.55, 0.3, 3.1, -0.26], [0.1, -3.6, 4.3, 0.07]),
+    routePlan([-1.8, 3.8, 2.9, -0.35], [0.65, 0.7, 4.1, 0.17], [2.05, -2.95, 2.6, -0.3], [-0.1, -1.4, 1.9, 1.47])
+  ]
+];
+
 const lateBoard = (chapter, slot) => {
   const layoutIndex = (slot * 3 + (chapter - 5) * 2) % lateLayouts.length;
   const layout = lateLayouts[layoutIndex];
@@ -328,13 +399,81 @@ const lateBoard = (chapter, slot) => {
   return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, shared);
 };
 
+const expertBoard = (chapter, slot) => {
+  const phase = chapter - 9;
+  const layoutIndex = (slot * 7 + phase * 3) % lateLayouts.length;
+  const layout = lateLayouts[layoutIndex];
+  const direction = (slot + phase) % 2 === 0 ? 1 : -1;
+  const start = [layout.start[0] * direction, layout.start[1] - phase * 0.025];
+  const cupX = layout.cupX * direction;
+  const machineModes = [
+    ["constant", "variable"],
+    ["impact", "fixed"],
+    ["impact", "variable"],
+    ["constant", "impact"],
+    ["variable", "impact"]
+  ][phase];
+  const makeMachine = (spec, mode, index) => {
+    const [x, y, r] = spec;
+    if (mode === "fixed") return cross(x * direction, y, r, "fixed");
+    return wheel(x * direction, y, r, mode, mode === "constant" ? (index ? -1 : 1) * direction * (0.82 + phase * 0.04) : 0, {
+      baseSpeed: (index ? -0.12 : 0.1) * direction,
+      amplitude: 1.0 + phase * 0.06,
+      frequency: 0.85 + slot * 0.035 + index * 0.12,
+      damping: 0.58 + ((slot + index) % 3) * 0.08
+    });
+  };
+  const machines = [
+    makeMachine(layout.first, machineModes[0], 0),
+    makeMachine(layout.second, machineModes[1], 1)
+  ];
+  const routeBars = expertRoutePlans[phase][slot].map(item => mirrorBar(item, direction));
+  const dynamics = layout.dynamics.map((item, index) => mirrorDynamic({ ...item, mass: item.mass + phase * 0.04 + index * 0.02 }, direction));
+  dynamics.push(dynamicBar((1.8 - (slot % 4) * 1.2) * direction, -4.0 + (slot % 3) * 0.55, 1.55 + (slot % 3) * 0.25, (slot % 2 ? -0.24 : 0.26) * direction, 0.9 + phase * 0.08));
+  if (phase >= 3) dynamics.push(dynamicBar(-0.2 * direction, 2.2 - (slot % 2) * 0.55, 1.7 + (slot % 3) * 0.2, (slot % 2 ? 0.3 : -0.28) * direction, 1.15));
+  const magnets = lateMagnetLayouts[layoutIndex].map((item, index) => mirrorMagnet({
+    ...item,
+    pull: (phase === 1 && index === 0) || (phase === 3 && index === 1) ? -item.pull : item.pull,
+    strength: item.strength + phase * 0.45
+  }, direction));
+  if (phase >= 2) magnets.push(mirrorMagnet({ ...finaleMagnetLayouts[(slot + phase) % finaleMagnetLayouts.length], strength: 4.8 + phase * 0.35 }, direction));
+  const magnetHint = [
+    "兩個磁場會彎曲路線，先觀察球靠近時的偏轉。",
+    "活動支架會因重心翻轉，磁場只負責改變下一次落點。",
+    "先找出連鎖反應的第一個碰撞點，再補上缺少的支撐。",
+    "這些機關容許多條路線，提示只是其中一種思考方向。",
+    "磁場、動態支架與轉輪同時運作，分段觀察比一次猜完整路線可靠。"
+  ][phase];
+  const shared = { bars: routeBars, obstacles: machines, dynamics, magnets, magnetHint };
+  const kinds = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"];
+  const kind = kinds[(slot * 3 + phase * 2) % kinds.length];
+  const targetPoint = [layout.target[0] * direction, layout.target[1] + phase * 0.05];
+  const groundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const checkpoints = layout.checkpoints.map(([x, y, r]) => [x * direction, y + phase * 0.04, r]);
+  if (phase >= 2) checkpoints.push([0.15 * direction, -3.55 + (slot % 2) * 0.35, 0.46]);
+  if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, shared);
+  if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], shared);
+  if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", layout.wall[0], layout.wall[1], shared);
+  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, noDraw: [{ x: -1.1 * direction, y: -1.6, w: 1.3 + (slot % 2) * 0.35, h: 1.8 }] });
+  if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], shared);
+  if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75, 0.48]], shared);
+  return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.5 + (slot % 4) * 0.07 }), 0.68 + phase * 0.035 + (slot % 3) * 0.025, shared);
+};
+
 const lateExpansionBoards = [
   Array.from({ length: 10 }, (_, slot) => lateBoard(5, slot)),
   Array.from({ length: 10 }, (_, slot) => lateBoard(6, slot)),
   Array.from({ length: 10 }, (_, slot) => lateBoard(7, slot)),
   Array.from({ length: 8 }, (_, slot) => lateBoard(8, slot))
 ];
-expansionBoards.push(...lateExpansionBoards);
+const expertExpansionBoards = [
+  Array.from({ length: 10 }, (_, slot) => expertBoard(9, slot)),
+  Array.from({ length: 10 }, (_, slot) => expertBoard(10, slot)),
+  Array.from({ length: 10 }, (_, slot) => expertBoard(11, slot)),
+  Array.from({ length: 10 }, (_, slot) => expertBoard(12, slot)),
+  Array.from({ length: 10 }, (_, slot) => expertBoard(13, slot))
+];
+expansionBoards.push(...lateExpansionBoards, ...expertExpansionBoards);
 
 function buildExpansionLevels() {
   const hints = {
@@ -387,9 +526,11 @@ function readUnlockedLevel() {
   try {
     let unlocked = Math.min(levels.length, Math.max(1, Number(localStorage.getItem("brain-physics-unlocked")) || 1));
     const savedStars = JSON.parse(localStorage.getItem("brain-physics-stars") || "{}");
-    if (unlocked === 12 && levels.length > 12 && Number(savedStars[11]) > 0) {
-      unlocked = 13;
-      localStorage.setItem("brain-physics-unlocked", "13");
+    for (const previousCampaignEnd of [12, 100]) {
+      if (unlocked === previousCampaignEnd && levels.length > previousCampaignEnd && Number(savedStars[previousCampaignEnd - 1]) > 0) {
+        unlocked = previousCampaignEnd + 1;
+        localStorage.setItem("brain-physics-unlocked", String(unlocked));
+      }
     }
     return unlocked;
   }
@@ -1612,6 +1753,9 @@ if (modelContext?.registerTool) {
 
 window.__gameDebug = {
   loadLevel,
+  getUnlockedLevel() {
+    return readUnlockedLevel();
+  },
   addTestStroke(points, velocity = [0, 0]) {
     if (!Array.isArray(points) || points.length < 2 || points.length > MAX_STROKE_POINTS) throw new Error("test stroke points are out of range");
     const worldPoints = points.map(([x, y]) => new THREE.Vector2(x, y));

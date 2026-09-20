@@ -95,7 +95,7 @@ try {
     window.__smokeErrors = [];
     window.addEventListener('error', event => window.__smokeErrors.push(event.message));
     window.addEventListener('unhandledrejection', event => window.__smokeErrors.push(String(event.reason)));
-    if (location.protocol === 'file:') localStorage.setItem('brain-physics-unlocked', '100');
+    if (location.protocol === 'file:') localStorage.setItem('brain-physics-unlocked', '150');
   ` });
   const gameUrl = pathToFileURL(resolve("dist/index.html")).href;
   await sendPage("Page.navigate", { url: gameUrl });
@@ -118,7 +118,8 @@ try {
     };
   })()`);
   assert.equal(menu.ready, "true", "game initialization completed");
-  assert.equal(menu.cards, 100, "all 100 level cards rendered");
+  assert.equal(menu.cards, 150, "all 150 level cards rendered");
+  assert.match(menu.progress, /150 \/ 150/, "the level selector reports the full 150-level campaign");
   assert.equal(menu.firstLevel, "0", "the first level is present");
   assert.ok(menu.firstVisible && menu.gridHeight > 0, "the level grid is visible on a phone viewport");
 
@@ -126,7 +127,7 @@ try {
     const missions = [];
     const lateRoutes = [];
     const blueprints = [];
-    for (let index = 0; index < 100; index++) {
+    for (let index = 0; index < 150; index++) {
       const card = document.querySelector('.level-card[data-level="' + index + '"]');
       if (!card || card.disabled) throw new Error('level card unavailable: ' + (index + 1));
       card.click();
@@ -258,10 +259,13 @@ try {
       const halfY = Math.abs(Math.sin(rotation) * length / 2);
       return Math.abs(x) + halfX < 4.9 && Math.abs(y) + halfY < 6.9;
     }));
+    const expertBoards = blueprints.slice(100);
     return {
       opened: missions.length,
       distinctMissions: new Set(missions).size,
       distinctLateRoutes: new Set(lateRoutes.map(JSON.stringify)).size,
+      distinctExpertMechanics: new Set(expertBoards.map(board => JSON.stringify({ obstacles: board.obstacles, dynamics: board.dynamics, magnets: board.magnets }))).size,
+      expertGoalTypes: new Set(expertBoards.map(board => board.goal.type)).size,
       routeComplexities: [...new Set(lateRoutes.map(route => route.length))].sort((a, b) => a - b),
       verticalRouteRails: lateRoutes.flat().filter(([, , , rotation]) => Math.abs(rotation) > 1.2).length,
       lateRoutesInsideWorld: insideWorld,
@@ -270,9 +274,11 @@ try {
       errors: window.__smokeErrors
     };
   })()`);
-  assert.equal(scenes.opened, 100, "all 100 level scenes can be opened on a phone viewport");
+  assert.equal(scenes.opened, 150, "all 150 level scenes can be opened on a phone viewport");
   assert.ok(scenes.distinctMissions >= 7, "the campaign includes all seven goal types");
-  assert.equal(scenes.distinctLateRoutes, 38, "all 38 late levels use distinct rail layouts");
+  assert.equal(scenes.distinctLateRoutes, 88, "all 88 advanced levels use distinct rail layouts");
+  assert.equal(scenes.distinctExpertMechanics, 50, "levels 101-150 use distinct machine, support, and magnet configurations");
+  assert.equal(scenes.expertGoalTypes, 7, "levels 101-150 exercise every gameplay goal type");
   assert.deepEqual(scenes.routeComplexities, [2, 3, 4], "late routes vary between two, three, and four rails");
   assert.ok(scenes.verticalRouteRails >= 8, "some late routes use vertical gates, not only shallow ramps");
   assert.ok(scenes.lateRoutesInsideWorld, "late-game route rails remain within the playable board");
@@ -282,7 +288,7 @@ try {
   const goalConditionRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
     const representatives = {};
-    for (let index = 0; index < 100; index++) {
+    for (let index = 0; index < 150; index++) {
       debug.loadLevel(index);
       const type = debug.getState().goal;
       if (!(type in representatives)) representatives[type] = index;
@@ -295,6 +301,33 @@ try {
   })()`);
   assert.equal(goalConditionRegression.length, 8, "all seven gameplay goals and the draw tutorial have completion fixtures");
   assert.ok(goalConditionRegression.every(result => result.finished), `every goal type can register a valid win: ${JSON.stringify(goalConditionRegression)}`);
+
+  const allLevelGoalRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const failures = [];
+    for (let index = 0; index < 150; index++) {
+      debug.loadLevel(index);
+      const result = debug.triggerGoalForTest();
+      if (!result.finished) failures.push({ level: index + 1, goal: result.goal });
+    }
+    return { checked: 150, failures };
+  })()`);
+  assert.deepEqual(allLevelGoalRegression, { checked: 150, failures: [] }, `every level can register its declared win condition: ${JSON.stringify(allLevelGoalRegression)}`);
+
+  const legacyProgressRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const previousUnlocked = localStorage.getItem('brain-physics-unlocked');
+    const previousStars = localStorage.getItem('brain-physics-stars');
+    localStorage.setItem('brain-physics-unlocked', '100');
+    localStorage.setItem('brain-physics-stars', JSON.stringify({ 99: 1 }));
+    const migrated = debug.getUnlockedLevel();
+    if (previousUnlocked === null) localStorage.removeItem('brain-physics-unlocked');
+    else localStorage.setItem('brain-physics-unlocked', previousUnlocked);
+    if (previousStars === null) localStorage.removeItem('brain-physics-stars');
+    else localStorage.setItem('brain-physics-stars', previousStars);
+    return migrated;
+  })()`);
+  assert.equal(legacyProgressRegression, 101, "a player who cleared the old finale automatically unlocks level 101");
 
   const openEndedLevelRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
@@ -348,6 +381,26 @@ try {
   assert.equal(magnetPlay.strokeCount, "1 / 4", "a magnetic-field level accepts a touch-drawn body");
   assert.deepEqual(magnetErrors, [], "magnetic-field physics produces no browser errors");
 
+  const finalePlay = await evaluatePage(`(() => {
+    const card = document.querySelector('.level-card[data-level="149"]');
+    card.click();
+    const canvas = document.querySelector('#canvasMount canvas');
+    const rect = canvas.getBoundingClientRect();
+    const emit = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId: 15, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true,
+      clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y, buttons
+    }));
+    emit('pointerdown', 0.15, 0.12, 1);
+    emit('pointermove', 0.22, 0.16, 1);
+    emit('pointermove', 0.29, 0.19, 1);
+    emit('pointerup', 0.29, 0.19, 0);
+    const state = window.__gameDebug.getState();
+    return { chapter: state.chapter, level: state.level, strokeCount: document.querySelector('#strokeCount')?.textContent?.trim() };
+  })()`);
+  await delay(180);
+  assert.deepEqual(finalePlay, { chapter: "百五十關終極試煉", level: 150, strokeCount: "1 / 4" }, "level 150 opens and accepts touch drawing on a phone viewport");
+  assert.deepEqual(await evaluatePage("window.__smokeErrors"), [], "the extended finale produces no browser errors");
+
   const collisionRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
     debug.loadLevel(3);
@@ -385,10 +438,13 @@ try {
     const introduced = debug.getState().magnets.length;
     debug.loadLevel(99);
     const finale = debug.getState().magnets.length;
-    return { introduced, finale };
+    debug.loadLevel(149);
+    const extendedFinale = debug.getState().magnets.length;
+    return { introduced, finale, extendedFinale };
   })()`);
   assert.equal(magnetProgression.introduced, 2, "the magnetic chapter teaches with two fields");
-  assert.equal(magnetProgression.finale, 3, "the final chapter combines three fields");
+  assert.equal(magnetProgression.finale, 3, "the level-100 finale combines three fields");
+  assert.equal(magnetProgression.extendedFinale, 3, "the level-150 finale keeps three readable fields");
 
   const gearDeterminismRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
@@ -403,7 +459,7 @@ try {
   await sendPage("Emulation.setCPUThrottlingRate", { rate: 4 });
   const physicsBenchmarkMs = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
-    debug.loadLevel(62);
+    debug.loadLevel(149);
     for (let line = 0; line < 4; line++) {
       const points = Array.from({ length: 160 }, (_, index) => {
         const progress = index / 159;
@@ -438,7 +494,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, openEndedLevelRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();
