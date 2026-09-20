@@ -24,6 +24,10 @@ const BALL_RADIUS = 0.28;
 const BALL_MASS = 0.55;
 const LINE_RADIUS = 0.075;
 const LINE_DENSITY = 0.85;
+const FIXED_STEP = 1 / 120;
+const MAX_PHYSICS_SPEED = 18;
+const MAX_STROKE_POINTS = 192;
+const COLLISION_CELL_SIZE = 0.75;
 let maxStrokes = 3;
 const GRAVITY = 5.5;
 
@@ -67,6 +71,8 @@ const gears = [];
 const dynamicBodies = [];
 const magnets = [];
 let gearSegmentsCache = [];
+let worldObstacleSegments = [];
+let worldObstacleGrid = new Map();
 const activeBodies = [];
 let basket = null;
 let target = null;
@@ -194,6 +200,16 @@ const lateMagnetLayouts = [
   [{ x: -2.5, y: -1.4, pull: 1, strength: 5.5 }, { x: 1.6, y: 2.0, pull: 1, strength: 6.0 }],
   [{ x: -1.0, y: 1.4, pull: -1, strength: 6.1 }, { x: 2.6, y: -3.5, pull: 1, strength: 5.6 }]
 ];
+const finaleMagnetLayouts = [
+  { x: 0.2, y: 5.0, pull: 1, strength: 4.2 },
+  { x: 0.3, y: 4.8, pull: -1, strength: 4.6 },
+  { x: 0.2, y: 4.9, pull: 1, strength: 4.4 },
+  { x: 0.4, y: 4.8, pull: -1, strength: 4.3 },
+  { x: 0.3, y: 5.0, pull: 1, strength: 4.5 },
+  { x: -0.4, y: 5.1, pull: -1, strength: 4.7 },
+  { x: 0.3, y: 5.1, pull: 1, strength: 4.2 },
+  { x: -0.4, y: 4.9, pull: -1, strength: 4.6 }
+];
 
 const mirrorBar = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
 const mirrorDynamic = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
@@ -235,6 +251,7 @@ const lateBoard = (chapter, slot) => {
         strength: item.strength + (chapter === 8 ? 1.2 : 0)
       }, direction))
     : [];
+  if (chapter === 8) magnets.push(mirrorMagnet(finaleMagnetLayouts[slot], direction));
   const magnetHint = chapter < 6
     ? ""
     : chapter === 6
@@ -440,6 +457,8 @@ function clearScene() {
   dynamicBodies.length = 0;
   magnets.length = 0;
   gearSegmentsCache = [];
+  worldObstacleSegments = [];
+  worldObstacleGrid = new Map();
   activeBodies.length = 0;
   checkpointHits.clear();
   checkpointMarkers = [];
@@ -592,6 +611,10 @@ function beginStroke(event) {
 function moveStroke(event) {
   if (event.pointerId !== activePointerId || !currentStroke) return;
   event.preventDefault();
+  if (currentStroke.points.length >= MAX_STROKE_POINTS) {
+    instructionEl.textContent = "已達單筆線條上限，放開即可開始模擬";
+    return;
+  }
   const point = worldPoint(event);
   if (!validPoint(point)) return;
   const last = currentStroke.points[currentStroke.points.length - 1];
@@ -603,6 +626,7 @@ function moveStroke(event) {
   const segment = addStrokeSegment(last, point);
   if (segment) currentStroke.meshes.push(segment);
   currentStroke.points.push(point);
+  if (currentStroke.points.length >= MAX_STROKE_POINTS) instructionEl.textContent = "已達單筆線條上限，放開即可開始模擬";
 }
 
 function makeStrokeBody(stroke) {
@@ -747,6 +771,7 @@ function resetGame() {
     gear.angularVelocity = gear.mode === "constant" ? gear.angularVelocity : 0;
   });
   gearSegmentsCache = gears.flatMap(gearWorldSegments);
+  rebuildWorldObstacleGrid();
   dynamicBodies.forEach(body => {
     body.group.position.copy(body.initialPosition);
     body.group.rotation.z = body.initialRotation;
@@ -896,19 +921,39 @@ function resolveBodyPair(bodyA, bodyB, contactA, contactB, normal, penetration) 
   }
 }
 
-function collideBodyPair(bodyA, bodyB, segmentsA, segmentsB) {
-  let deepest = null;
+function bodyWorldPointAt(body, index) {
+  const local = body.localPoints[index];
+  const angle = body.group.rotation.z;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  return new THREE.Vector2(
+    body.group.position.x + local.x * cos - local.y * sin,
+    body.group.position.y + local.x * sin + local.y * cos
+  );
+}
+
+function collideBodyPair(bodyA, bodyB, segmentsA, segmentsB, segmentPairs) {
   const broadphasePadding = LINE_RADIUS * 2;
-  for (const first of segmentsA) {
-    for (const second of segmentsB) {
+  for (let iteration = 0; iteration < 4; iteration++) {
+    let deepest = null;
+    for (const [firstIndex, secondIndex] of segmentPairs) {
+      const first = segmentsA[firstIndex];
+      const second = segmentsB[secondIndex];
+      let firstA = first.a;
+      let firstB = first.b;
+      let secondA = second.a;
+      let secondB = second.b;
+      if (iteration > 0) {
+        firstA = bodyWorldPointAt(bodyA, firstIndex);
+        firstB = bodyWorldPointAt(bodyA, firstIndex + 1);
+        secondA = bodyWorldPointAt(bodyB, secondIndex);
+        secondB = bodyWorldPointAt(bodyB, secondIndex + 1);
+      }
       if (first.maxX + broadphasePadding < second.minX
         || second.maxX + broadphasePadding < first.minX
         || first.maxY + broadphasePadding < second.minY
         || second.maxY + broadphasePadding < first.minY) continue;
-      const closest = closestPointsOnSegments(
-        first.a, first.b,
-        second.a, second.b
-      );
+      const closest = closestPointsOnSegments(firstA, firstB, secondA, secondB);
       const distance = Math.sqrt(closest.distanceSq);
       const penetration = LINE_RADIUS * 2 - distance;
       if (penetration <= 0 || (deepest && penetration <= deepest.penetration)) continue;
@@ -917,15 +962,11 @@ function collideBodyPair(bodyA, bodyB, segmentsA, segmentsB) {
         delta.set(bodyA.group.position.x - bodyB.group.position.x, bodyA.group.position.y - bodyB.group.position.y);
         if (delta.lengthSq() < 0.000001) delta.set(0, 1);
       }
-      deepest = {
-        contactA: closest.first,
-        contactB: closest.second,
-        normal: delta.normalize(),
-        penetration
-      };
+      deepest = { contactA: closest.first, contactB: closest.second, normal: delta.normalize(), penetration };
     }
+    if (!deepest) break;
+    resolveBodyPair(bodyA, bodyB, deepest.contactA, deepest.contactB, deepest.normal, deepest.penetration);
   }
-  if (deepest) resolveBodyPair(bodyA, bodyB, deepest.contactA, deepest.contactB, deepest.normal, deepest.penetration);
 }
 
 function collideMovingBodies(bodies) {
@@ -951,21 +992,61 @@ function collideMovingBodies(bodies) {
     }
     return { segments, minX, maxX, minY, maxY };
   });
-  for (let firstIndex = 0; firstIndex < bodies.length; firstIndex++) {
-    for (let secondIndex = firstIndex + 1; secondIndex < bodies.length; secondIndex++) {
-      const first = collisionData[firstIndex];
-      const second = collisionData[secondIndex];
-      const firstSegments = first.segments;
-      const secondSegments = second.segments;
-      if (!firstSegments.length || !secondSegments.length) continue;
-      const padding = LINE_RADIUS * 2;
-      if (first.maxX + padding < second.minX
-        || second.maxX + padding < first.minX
-        || first.maxY + padding < second.minY
-        || second.maxY + padding < first.minY) continue;
-      collideBodyPair(bodies[firstIndex], bodies[secondIndex], firstSegments, secondSegments);
+  const cells = new Map();
+  for (let bodyIndex = 0; bodyIndex < collisionData.length; bodyIndex++) {
+    collisionData[bodyIndex].segments.forEach((segment, segmentIndex) => {
+      const minCellX = Math.floor((segment.minX - LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const maxCellX = Math.floor((segment.maxX + LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const minCellY = Math.floor((segment.minY - LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const maxCellY = Math.floor((segment.maxY + LINE_RADIUS) / COLLISION_CELL_SIZE);
+      for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+        for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+          const key = `${cellX}:${cellY}`;
+          let bucket = cells.get(key);
+          if (!bucket) cells.set(key, bucket = []);
+          bucket.push({ bodyIndex, segmentIndex });
+        }
+      }
+    });
+  }
+
+  const candidates = new Map();
+  for (const bucket of cells.values()) {
+    for (let firstIndex = 0; firstIndex < bucket.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < bucket.length; secondIndex++) {
+        const first = bucket[firstIndex];
+        const second = bucket[secondIndex];
+        if (first.bodyIndex === second.bodyIndex) continue;
+        const bodyAIndex = Math.min(first.bodyIndex, second.bodyIndex);
+        const bodyBIndex = Math.max(first.bodyIndex, second.bodyIndex);
+        const segmentAIndex = first.bodyIndex === bodyAIndex ? first.segmentIndex : second.segmentIndex;
+        const segmentBIndex = first.bodyIndex === bodyAIndex ? second.segmentIndex : first.segmentIndex;
+        const segmentA = collisionData[bodyAIndex].segments[segmentAIndex];
+        const segmentB = collisionData[bodyBIndex].segments[segmentBIndex];
+        const padding = LINE_RADIUS * 2;
+        if (segmentA.maxX + padding < segmentB.minX || segmentB.maxX + padding < segmentA.minX
+          || segmentA.maxY + padding < segmentB.minY || segmentB.maxY + padding < segmentA.minY) continue;
+        const bodyPairKey = bodyAIndex * bodies.length + bodyBIndex;
+        let candidate = candidates.get(bodyPairKey);
+        if (!candidate) {
+          candidate = { bodyAIndex, bodyBIndex, segmentPairs: [], seen: new Set() };
+          candidates.set(bodyPairKey, candidate);
+        }
+        const segmentPairKey = segmentAIndex * MAX_STROKE_POINTS + segmentBIndex;
+        if (candidate.seen.has(segmentPairKey)) continue;
+        candidate.seen.add(segmentPairKey);
+        candidate.segmentPairs.push([segmentAIndex, segmentBIndex]);
+      }
     }
   }
+
+  candidates.forEach(candidate => collideBodyPair(
+    bodies[candidate.bodyAIndex],
+    bodies[candidate.bodyBIndex],
+    collisionData[candidate.bodyAIndex].segments,
+    collisionData[candidate.bodyBIndex].segments,
+    candidate.segmentPairs
+  ));
 }
 
 function gearSurfaceVelocity(gear, point) {
@@ -991,15 +1072,35 @@ function updateGears(dt) {
     if (gear.mode === "impact") gear.angularVelocity *= Math.exp(-gear.damping * dt);
     gear.group.rotation.z += gear.angularVelocity * dt;
   });
-  // Gear spokes/rims are unchanged during the fixed-step loop, so build their
-  // world-space collision segments once per rendered frame instead of once
-  // for every body and every 120 Hz physics sub-step.
+  // Keep the rendered gear pose and its collision geometry in the same fixed
+  // physics tick so timing does not vary with the device refresh rate.
   gearSegmentsCache = gears.flatMap(gearWorldSegments);
+  rebuildWorldObstacleGrid();
+}
+
+function rebuildWorldObstacleGrid() {
+  worldObstacleSegments = staticSegments.concat(gearSegmentsCache);
+  worldObstacleGrid = new Map();
+  worldObstacleSegments.forEach((segment, index) => {
+    const padding = segment.radius + LINE_RADIUS;
+    const minCellX = Math.floor((Math.min(segment.a.x, segment.b.x) - padding) / COLLISION_CELL_SIZE);
+    const maxCellX = Math.floor((Math.max(segment.a.x, segment.b.x) + padding) / COLLISION_CELL_SIZE);
+    const minCellY = Math.floor((Math.min(segment.a.y, segment.b.y) - padding) / COLLISION_CELL_SIZE);
+    const maxCellY = Math.floor((Math.max(segment.a.y, segment.b.y) + padding) / COLLISION_CELL_SIZE);
+    for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+      for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+        const key = `${cellX}:${cellY}`;
+        let bucket = worldObstacleGrid.get(key);
+        if (!bucket) worldObstacleGrid.set(key, bucket = []);
+        bucket.push({ segment, index });
+      }
+    }
+  });
 }
 
 function collideStrokeWithWorld(body) {
   const bounds = visibleBounds();
-  for (let iteration = 0; iteration < 2; iteration++) {
+  for (let iteration = 0; iteration < 4; iteration++) {
     const points = strokeWorldPoints(body);
     const wallContacts = [
       { normal: new THREE.Vector2(1, 0), depthFor: point => bounds.left + LINE_RADIUS - point.x },
@@ -1020,43 +1121,92 @@ function collideStrokeWithWorld(body) {
       }
     }
 
-    for (const point of strokeWorldPoints(body)) {
-      for (const obstacle of circleObstacles) {
-        const delta = point.clone().sub(new THREE.Vector2(obstacle.x, obstacle.y));
-        const minimum = obstacle.r + LINE_RADIUS;
+    const currentPoints = strokeWorldPoints(body);
+    const bodySegments = [];
+    for (let index = 1; index < currentPoints.length; index++) {
+      const a = currentPoints[index - 1];
+      const b = currentPoints[index];
+      bodySegments.push({ a, b, minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minY: Math.min(a.y, b.y), maxY: Math.max(a.y, b.y) });
+    }
+
+    let deepest = null;
+    for (const obstacle of circleObstacles) {
+      for (const moving of bodySegments) {
+        const padding = obstacle.r + LINE_RADIUS;
+        if (moving.maxX + padding < obstacle.x || moving.minX - padding > obstacle.x
+          || moving.maxY + padding < obstacle.y || moving.minY - padding > obstacle.y) continue;
+        const center = new THREE.Vector2(obstacle.x, obstacle.y);
+        const contactA = closestPointOnSegment(center, moving.a, moving.b);
+        const delta = contactA.clone().sub(center);
         const distance = delta.length();
-        if (distance > 0 && distance < minimum) {
-          const normal = delta.multiplyScalar(1 / distance);
-          body.group.position.x += normal.x * (minimum - distance);
-          body.group.position.y += normal.y * (minimum - distance);
-          resolveBodyContact(body, normal, point);
+        const penetration = padding - distance;
+        if (penetration <= 0 || (deepest && penetration <= deepest.penetration)) continue;
+        if (distance > 0.000001) delta.multiplyScalar(1 / distance);
+        else {
+          delta.set(body.group.position.x - obstacle.x, body.group.position.y - obstacle.y);
+          if (delta.lengthSq() < 0.000001) delta.set(-(moving.b.y - moving.a.y), moving.b.x - moving.a.x);
+          if (delta.lengthSq() < 0.000001) delta.set(1, 0);
+          delta.normalize();
+        }
+        deepest = { contactA, normal: delta, penetration, gear: null };
+      }
+    }
+
+    const nearbyPairs = [];
+    const seenPairs = new Set();
+    for (let movingIndex = 0; movingIndex < bodySegments.length; movingIndex++) {
+      const moving = bodySegments[movingIndex];
+      const minCellX = Math.floor((moving.minX - LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const maxCellX = Math.floor((moving.maxX + LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const minCellY = Math.floor((moving.minY - LINE_RADIUS) / COLLISION_CELL_SIZE);
+      const maxCellY = Math.floor((moving.maxY + LINE_RADIUS) / COLLISION_CELL_SIZE);
+      for (let cellX = minCellX; cellX <= maxCellX; cellX++) {
+        for (let cellY = minCellY; cellY <= maxCellY; cellY++) {
+          const bucket = worldObstacleGrid.get(`${cellX}:${cellY}`);
+          if (!bucket) continue;
+          for (const entry of bucket) {
+            const obstacle = entry.segment;
+            const padding = LINE_RADIUS + obstacle.radius;
+            if (moving.maxX + padding < Math.min(obstacle.a.x, obstacle.b.x)
+              || Math.max(obstacle.a.x, obstacle.b.x) + padding < moving.minX
+              || moving.maxY + padding < Math.min(obstacle.a.y, obstacle.b.y)
+              || Math.max(obstacle.a.y, obstacle.b.y) + padding < moving.minY) continue;
+            const pairKey = movingIndex * Math.max(1, worldObstacleSegments.length) + entry.index;
+            if (seenPairs.has(pairKey)) continue;
+            seenPairs.add(pairKey);
+            nearbyPairs.push({ moving, obstacle });
+          }
         }
       }
-      for (const segment of staticSegments) {
-        const closest = closestPointOnSegment(point, segment.a, segment.b);
-        const delta = point.clone().sub(closest);
-        const minimum = LINE_RADIUS + segment.radius;
-        const distance = delta.length();
-        if (distance > 0 && distance < minimum) {
-          const normal = delta.multiplyScalar(1 / distance);
-          body.group.position.x += normal.x * (minimum - distance);
-          body.group.position.y += normal.y * (minimum - distance);
-          resolveBodyContact(body, normal, closest);
-        }
+    }
+
+    for (const { moving, obstacle } of nearbyPairs) {
+      const padding = LINE_RADIUS + obstacle.radius;
+      const closest = closestPointsOnSegments(moving.a, moving.b, obstacle.a, obstacle.b);
+      const distance = Math.sqrt(closest.distanceSq);
+      const penetration = padding - distance;
+      if (penetration <= 0 || (deepest && penetration <= deepest.penetration)) continue;
+      const normal = closest.first.clone().sub(closest.second);
+      if (distance > 0.000001) normal.multiplyScalar(1 / distance);
+      else {
+        const obstacleCenterX = (obstacle.a.x + obstacle.b.x) / 2;
+        const obstacleCenterY = (obstacle.a.y + obstacle.b.y) / 2;
+        normal.set(body.group.position.x - obstacleCenterX, body.group.position.y - obstacleCenterY);
+        if (normal.lengthSq() < 0.000001) normal.set(-(obstacle.b.y - obstacle.a.y), obstacle.b.x - obstacle.a.x);
+        if (normal.lengthSq() < 0.000001) normal.set(1, 0);
+        normal.normalize();
       }
-      for (const segment of gearSegmentsCache) {
-        const closest = closestPointOnSegment(point, segment.a, segment.b);
-        const delta = point.clone().sub(closest);
-        const minimum = LINE_RADIUS + segment.radius;
-        const distance = delta.length();
-        if (distance > 0 && distance < minimum) {
-          const normal = delta.multiplyScalar(1 / distance);
-          body.group.position.x += normal.x * (minimum - distance);
-          body.group.position.y += normal.y * (minimum - distance);
-          const impulse = resolveBodyContact(body, normal, closest, gearSurfaceVelocity(segment.gear, closest));
-          applyGearImpulse(segment.gear, closest, normal, impulse);
-        }
-      }
+      deepest = { contactA: closest.first, normal, penetration, gear: obstacle.gear ?? null };
+    }
+
+    if (deepest) {
+      const correction = Math.max(0, deepest.penetration - 0.002) * 0.82;
+      body.group.position.x += deepest.normal.x * correction;
+      body.group.position.y += deepest.normal.y * correction;
+      const contact = deepest.contactA;
+      const surfaceVelocity = deepest.gear ? gearSurfaceVelocity(deepest.gear, contact) : undefined;
+      const impulse = resolveBodyContact(body, deepest.normal, contact, surfaceVelocity, 0.12, 0.5);
+      if (deepest.gear) applyGearImpulse(deepest.gear, contact, deepest.normal, impulse);
     }
   }
 }
@@ -1144,12 +1294,11 @@ function applyMagneticForce(position, velocity, mass, dt) {
   if (!magnets.length) return;
   const force = magneticForceAt(position, new THREE.Vector2());
   velocity.addScaledVector(force, dt / Math.max(0.25, mass));
-  if (velocity.lengthSq() > 18 * 18) velocity.setLength(18);
+  if (velocity.lengthSq() > MAX_PHYSICS_SPEED * MAX_PHYSICS_SPEED) velocity.setLength(MAX_PHYSICS_SPEED);
 }
 
 function applyMagneticForceToBody(body, dt) {
   if (!magnets.length || body.localPoints.length === 0) return;
-  const sampleCount = Math.min(8, body.localPoints.length);
   const angle = body.group.rotation.z;
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
@@ -1157,25 +1306,36 @@ function applyMagneticForceToBody(body, dt) {
   const sampleForce = new THREE.Vector2();
   const arm = new THREE.Vector2();
   const worldPoint = new THREE.Vector2();
+  const localPoint = new THREE.Vector2();
+  let totalLength = 0;
+  for (let index = 1; index < body.localPoints.length; index++) {
+    totalLength += body.localPoints[index].distanceTo(body.localPoints[index - 1]);
+  }
+  if (totalLength < 0.0001) return;
   let torque = 0;
-  for (let index = 0; index < sampleCount; index++) {
-    const pointIndex = sampleCount === 1
-      ? 0
-      : Math.round(index * (body.localPoints.length - 1) / (sampleCount - 1));
-    const localPoint = body.localPoints[pointIndex];
-    worldPoint.set(
-      body.group.position.x + localPoint.x * cos - localPoint.y * sin,
-      body.group.position.y + localPoint.x * sin + localPoint.y * cos
-    );
-    magneticForceAt(worldPoint, sampleForce);
-    const weight = 1 / sampleCount;
-    force.addScaledVector(sampleForce, weight);
-    arm.set(worldPoint.x - body.group.position.x, worldPoint.y - body.group.position.y);
-    torque += cross2(arm, sampleForce) * weight;
+  for (let index = 1; index < body.localPoints.length; index++) {
+    const localA = body.localPoints[index - 1];
+    const localB = body.localPoints[index];
+    const segmentLength = localA.distanceTo(localB);
+    if (segmentLength < 0.0001) continue;
+    const subdivisions = Math.max(1, Math.min(8, Math.ceil(segmentLength / 0.35)));
+    const weight = segmentLength / (subdivisions * totalLength);
+    for (let sample = 0; sample < subdivisions; sample++) {
+      const t = (sample + 0.5) / subdivisions;
+      localPoint.copy(localA).lerp(localB, t);
+      worldPoint.set(
+        body.group.position.x + localPoint.x * cos - localPoint.y * sin,
+        body.group.position.y + localPoint.x * sin + localPoint.y * cos
+      );
+      magneticForceAt(worldPoint, sampleForce);
+      force.addScaledVector(sampleForce, weight);
+      arm.set(worldPoint.x - body.group.position.x, worldPoint.y - body.group.position.y);
+      torque += cross2(arm, sampleForce) * weight;
+    }
   }
   body.velocity.addScaledVector(force, dt / Math.max(0.25, body.mass));
   body.angularVelocity += torque * dt / body.inertia;
-  if (body.velocity.lengthSq() > 18 * 18) body.velocity.setLength(18);
+  if (body.velocity.lengthSq() > MAX_PHYSICS_SPEED * MAX_PHYSICS_SPEED) body.velocity.setLength(MAX_PHYSICS_SPEED);
   body.angularVelocity = THREE.MathUtils.clamp(body.angularVelocity, -16, 16);
 }
 
@@ -1183,11 +1343,26 @@ function physicsStep(dt) {
   activeBodies.length = 0;
   dynamicBodies.forEach(body => activeBodies.push(body));
   strokes.forEach(body => activeBodies.push(body));
+  let fastest = ball ? ballVelocity.length() : 0;
+  activeBodies.forEach(body => { fastest = Math.max(fastest, body.velocity.length()); });
+  const substeps = Math.min(4, Math.max(1, Math.ceil(fastest * dt / LINE_RADIUS)));
+  const substep = dt / substeps;
+  for (let index = 0; index < substeps; index++) {
+    physicsSubstep(substep);
+    if (finished) break;
+  }
+}
+
+function physicsSubstep(dt) {
+  updateGears(dt);
   activeBodies.forEach(body => {
     applyMagneticForceToBody(body, dt);
     updateStrokeBody(body, dt);
   });
   collideMovingBodies(activeBodies);
+  activeBodies.forEach(body => {
+    if (body.velocity.lengthSq() > MAX_PHYSICS_SPEED * MAX_PHYSICS_SPEED) body.velocity.setLength(MAX_PHYSICS_SPEED);
+  });
   if (ball) {
     applyMagneticForce(ball.position, ballVelocity, BALL_MASS, dt);
     ballVelocity.y -= GRAVITY * dt;
@@ -1202,6 +1377,7 @@ function physicsStep(dt) {
       const points = strokeWorldPoints(body);
       for (let i = 1; i < points.length; i++) collideBallSegment(points[i - 1], points[i], LINE_RADIUS, 0.32, body);
     });
+    if (ballVelocity.lengthSq() > MAX_PHYSICS_SPEED * MAX_PHYSICS_SPEED) ballVelocity.setLength(MAX_PHYSICS_SPEED);
   }
   checkGoal();
 }
@@ -1347,14 +1523,19 @@ new ResizeObserver(resize).observe(board);
 const clock = new THREE.Clock();
 function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
-  updateGears(delta);
   if (running) {
     elapsed = (performance.now() - startedAt) / 1000;
     timerEl.textContent = elapsed.toFixed(1);
     accumulator += delta;
-    while (accumulator >= 1 / 120) {
-      physicsStep(1 / 120);
-      accumulator -= 1 / 120;
+    while (accumulator >= FIXED_STEP && running) {
+      physicsStep(FIXED_STEP);
+      accumulator -= FIXED_STEP;
+    }
+  } else {
+    accumulator += delta;
+    while (accumulator >= FIXED_STEP) {
+      updateGears(FIXED_STEP);
+      accumulator -= FIXED_STEP;
     }
   }
   renderer.render(scene, camera);
@@ -1377,6 +1558,26 @@ if (modelContext?.registerTool) {
 
 window.__gameDebug = {
   loadLevel,
+  addTestStroke(points, velocity = [0, 0]) {
+    if (!Array.isArray(points) || points.length < 2 || points.length > MAX_STROKE_POINTS) throw new Error("test stroke points are out of range");
+    const worldPoints = points.map(([x, y]) => new THREE.Vector2(x, y));
+    const meshes = [];
+    for (let index = 1; index < worldPoints.length; index++) {
+      const mesh = addStrokeSegment(worldPoints[index - 1], worldPoints[index]);
+      if (mesh) meshes.push(mesh);
+    }
+    const body = makeStrokeBody({ points: worldPoints, meshes });
+    body.velocity.set(velocity[0] ?? 0, velocity[1] ?? 0);
+    strokes.push(body);
+    updateControls();
+    return strokes.length - 1;
+  },
+  advancePhysics(steps = 1) {
+    const count = THREE.MathUtils.clamp(Math.floor(steps), 0, 1200);
+    running = true;
+    for (let index = 0; index < count; index++) physicsStep(FIXED_STEP);
+    return this.getState();
+  },
   getState() {
     return {
       running,
@@ -1389,6 +1590,16 @@ window.__gameDebug = {
       chapter: levels[currentLevelIndex].chapter ?? "基礎課程",
       goal: levels[currentLevelIndex].goal?.type ?? null,
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
+      magnets: magnets.map(({ x, y, pull, strength, range }) => ({ x, y, pull, strength, range })),
+      bodies: dynamicBodies.concat(strokes).map(body => ({
+        x: body.group.position.x,
+        y: body.group.position.y,
+        vx: body.velocity.x,
+        vy: body.velocity.y,
+        angle: body.group.rotation.z,
+        angularVelocity: body.angularVelocity,
+        points: strokeWorldPoints(body).map(point => ({ x: point.x, y: point.y }))
+      })),
       firstStrokeY: strokes[0]?.group.position.y ?? null,
       firstStrokeAngle: strokes[0]?.group.rotation.z ?? null,
       firstStrokeAngularVelocity: strokes[0]?.angularVelocity ?? null,

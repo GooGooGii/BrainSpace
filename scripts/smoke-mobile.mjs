@@ -178,6 +178,75 @@ try {
   assert.equal(magnetPlay.strokeCount, "1 / 4", "a magnetic-field level accepts a touch-drawn body");
   assert.deepEqual(magnetErrors, [], "magnetic-field physics produces no browser errors");
 
+  const collisionRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(3);
+    debug.addTestStroke([[-1, 0], [1, 0]], [0, 3]);
+    debug.addTestStroke([[-1, 0.25], [1, 0.25]], [0, -3]);
+    const bodies = debug.advancePhysics(8).bodies;
+    return {
+      separation: bodies[1].y - bodies[0].y,
+      relativeVerticalSpeed: bodies[0].vy - bodies[1].vy
+    };
+  })()`);
+  assert.ok(collisionRegression.separation >= 0.14, `drawn bodies stay separated after contact: ${JSON.stringify(collisionRegression)}`);
+  assert.ok(collisionRegression.relativeVerticalSpeed < 5.5, `drawn-body contact changes their relative speed: ${JSON.stringify(collisionRegression)}`);
+
+  const segmentObstacleRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(4);
+    debug.addTestStroke([[-1.8, -2.9], [1.8, -2.9]]);
+    return debug.advancePhysics(1).bodies[0].x;
+  })()`);
+  assert.ok(segmentObstacleRegression < -0.05, `a line's interior collides with a fixed wall even when both endpoints are clear: ${segmentObstacleRegression}`);
+
+  const magneticTorqueRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(72);
+    debug.addTestStroke([[-4.5, 3.1], [-3.0, 3.1]]);
+    return debug.advancePhysics(1).bodies.at(-1).angularVelocity;
+  })()`);
+  assert.ok(Math.abs(magneticTorqueRegression) > 0.01, `an asymmetric magnetic field creates angular velocity: ${magneticTorqueRegression}`);
+
+  const magnetProgression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(72);
+    const introduced = debug.getState().magnets.length;
+    debug.loadLevel(99);
+    const finale = debug.getState().magnets.length;
+    return { introduced, finale };
+  })()`);
+  assert.equal(magnetProgression.introduced, 2, "the magnetic chapter teaches with two fields");
+  assert.equal(magnetProgression.finale, 3, "the final chapter combines three fields");
+
+  const gearDeterminismRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(10);
+    const first = debug.advancePhysics(120).gears.map(gear => gear.angle);
+    debug.loadLevel(10);
+    const second = debug.advancePhysics(120).gears.map(gear => gear.angle);
+    return { first, second };
+  })()`);
+  assert.deepEqual(gearDeterminismRegression.second, gearDeterminismRegression.first, "gear timing is repeatable over the same number of fixed physics steps");
+
+  await sendPage("Emulation.setCPUThrottlingRate", { rate: 4 });
+  const physicsBenchmarkMs = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(62);
+    for (let line = 0; line < 4; line++) {
+      const points = Array.from({ length: 160 }, (_, index) => {
+        const progress = index / 159;
+        return [-3.8 + progress * 7.6, Math.sin(index * 0.22 + line * 0.38) * 2.1];
+      });
+      debug.addTestStroke(points);
+    }
+    const start = performance.now();
+    debug.advancePhysics(120);
+    return performance.now() - start;
+  })()`);
+  await sendPage("Emulation.setCPUThrottlingRate", { rate: 1 });
+  assert.ok(physicsBenchmarkMs > 0, "CPU-throttled mobile physics benchmark completes");
+
   assert.equal(await evaluatePage("document.querySelector('.level-card[data-level=\"0\"]').click(); !document.querySelector('#gameApp').classList.contains('hidden')"), true, "the first level opens");
   await delay(100);
   const play = await evaluatePage(`(() => {
@@ -198,7 +267,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();
