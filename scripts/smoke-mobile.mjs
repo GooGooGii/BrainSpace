@@ -124,6 +124,7 @@ try {
 
   const scenes = await evaluatePage(`(async () => {
     const missions = [];
+    const lateRoutes = [];
     for (let index = 0; index < 100; index++) {
       const card = document.querySelector('.level-card[data-level="' + index + '"]');
       if (!card || card.disabled) throw new Error('level card unavailable: ' + (index + 1));
@@ -131,13 +132,31 @@ try {
       const mission = document.querySelector('#missionText')?.textContent?.trim();
       if (!mission || document.querySelector('#gameApp').classList.contains('hidden')) throw new Error('level did not open: ' + (index + 1));
       missions.push(mission);
+      if (index >= 62) lateRoutes.push(window.__gameDebug.getState().blueprint.routeBars);
       document.querySelector('#levelMenuButton').click();
       await new Promise(resolve => requestAnimationFrame(resolve));
     }
-    return { opened: missions.length, distinctMissions: new Set(missions).size, errors: window.__smokeErrors };
+    const insideWorld = lateRoutes.every(route => route.every(([x, y, length, rotation]) => {
+      const halfX = Math.abs(Math.cos(rotation) * length / 2);
+      const halfY = Math.abs(Math.sin(rotation) * length / 2);
+      return Math.abs(x) + halfX < 4.9 && Math.abs(y) + halfY < 6.9;
+    }));
+    return {
+      opened: missions.length,
+      distinctMissions: new Set(missions).size,
+      distinctLateRoutes: new Set(lateRoutes.map(JSON.stringify)).size,
+      routeComplexities: [...new Set(lateRoutes.map(route => route.length))].sort((a, b) => a - b),
+      verticalRouteRails: lateRoutes.flat().filter(([, , , rotation]) => Math.abs(rotation) > 1.2).length,
+      lateRoutesInsideWorld: insideWorld,
+      errors: window.__smokeErrors
+    };
   })()`);
   assert.equal(scenes.opened, 100, "all 100 level scenes can be opened on a phone viewport");
   assert.ok(scenes.distinctMissions >= 7, "the campaign includes all seven goal types");
+  assert.equal(scenes.distinctLateRoutes, 38, "all 38 late levels use distinct rail layouts");
+  assert.deepEqual(scenes.routeComplexities, [2, 3, 4], "late routes vary between two, three, and four rails");
+  assert.ok(scenes.verticalRouteRails >= 8, "some late routes use vertical gates, not only shallow ramps");
+  assert.ok(scenes.lateRoutesInsideWorld, "late-game route rails remain within the playable board");
   assert.deepEqual(scenes.errors, [], "opening every level produces no browser errors");
 
   const dynamicPlay = await evaluatePage(`(() => {
@@ -203,7 +222,8 @@ try {
   const magneticTorqueRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
     debug.loadLevel(72);
-    debug.addTestStroke([[-4.5, 3.1], [-3.0, 3.1]]);
+    const magnet = debug.getState().magnets[0];
+    debug.addTestStroke([[magnet.x + 0.2, magnet.y + 0.6], [magnet.x + 1.7, magnet.y + 0.6]]);
     return debug.advancePhysics(1).bodies.at(-1).angularVelocity;
   })()`);
   assert.ok(Math.abs(magneticTorqueRegression) > 0.01, `an asymmetric magnetic field creates angular velocity: ${magneticTorqueRegression}`);
@@ -267,7 +287,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();

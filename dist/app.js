@@ -214,9 +214,63 @@ const finaleMagnetLayouts = [
 const mirrorBar = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
 const mirrorDynamic = (item, direction) => ({ ...item, x: item.x * direction, rotation: item.rotation * direction });
 const mirrorMagnet = (item, direction) => ({ ...item, x: item.x * direction });
+const routePlan = (...segments) => segments.map(([x, y, length, rotation]) => barSpec(x, y, length, rotation));
+
+// One route skeleton per late-campaign board. The chapters move from clean
+// precision lanes, through rebound containers, into timed paths and a denser
+// finale instead of repeating the same ten rails with new gear speeds.
+const lateRoutePlans = [
+  [
+    routePlan([-1.6, 3.35, 3.3, -0.18], [1.35, 0.25, 3.1, 0.22], [-0.2, -2.65, 2.6, -0.1]),
+    routePlan([-0.35, 3.5, 4.3, 0.04], [1.55, -1.0, 3.1, -0.38]),
+    routePlan([-2.2, 3.0, 2.3, 0.25], [0, 1.2, 2.8, 1.42], [2.0, -1.7, 2.2, 0.32]),
+    routePlan([1.2, 3.65, 3.8, -0.07], [-1.75, 0.7, 2.8, 0.28], [0.6, -3.4, 4.0, -0.18]),
+    routePlan([-0.9, 2.8, 4.5, -0.05], [-1.4, -3.1, 2.2, -0.24]),
+    routePlan([2.0, 3.3, 2.1, -0.28], [-1.0, 1.0, 4.0, 0.14], [1.8, -2.3, 3.0, -0.3]),
+    routePlan([-2.4, 2.6, 2.4, 0.16], [0.45, 0.05, 2.5, -0.28], [2.0, -3.5, 3.8, 0.12], [-0.3, -0.7, 1.6, 1.5]),
+    routePlan([-0.15, 3.8, 4.7, 0], [-1.8, 0.3, 2.1, -0.38], [2.1, 0.1, 3.2, 1.45]),
+    routePlan([1.85, 3.25, 3.1, 0.23], [1.5, -3.2, 3.3, -0.15]),
+    routePlan([-1.25, 3.6, 3.2, 0.31], [1.1, 0.15, 4.0, -0.12])
+  ],
+  [
+    routePlan([-2.0, 3.65, 4.2, -0.1], [1.3, 0.7, 2.2, 1.35], [-0.4, -2.8, 4.2, -0.08]),
+    routePlan([0.7, 3.5, 2.6, 0.32], [-1.4, 0.9, 4.3, -0.08], [1.9, -3.15, 2.2, 0.25], [0.25, -1.7, 2.1, 1.5]),
+    routePlan([-2.3, 3.4, 3.0, -0.3], [0.8, 0.5, 3.8, 0.14], [2.1, -3.3, 3.4, -0.22]),
+    routePlan([1.6, 3.75, 4.4, -0.02], [-0.7, 1.0, 2.2, 1.42], [1.3, -2.65, 2.6, 0.28]),
+    routePlan([0.1, 0.5, 4.4, -0.03], [-1.4, -3.6, 3.8, 0.19]),
+    routePlan([0.2, 3.1, 4.7, 0.1], [2.1, 0.2, 2.4, -0.33], [-2.0, -2.8, 2.6, 0.24]),
+    routePlan([-2.5, 3.75, 2.0, -0.15], [-0.1, 1.25, 3.7, 0.3], [1.7, -2.35, 4.2, -0.08], [1.55, 0.7, 2.1, 1.48]),
+    routePlan([1.1, 3.35, 2.7, -0.4], [-1.6, 0.15, 3.1, 0.15], [0.5, -3.3, 4.6, 0.05]),
+    routePlan([-0.3, 3.7, 4.1, -0.22], [2.0, 0.7, 2.2, 0.22]),
+    routePlan([-2.15, 3.15, 3.0, 0.27], [0.9, 0.6, 4.3, -0.14], [1.9, -3.7, 2.4, 0.2])
+  ],
+  [
+    routePlan([-1.8, 3.8, 4.5, -0.15], [1.6, 0.7, 2.2, 0.36]),
+    routePlan([1.9, 3.45, 3.3, 0.1], [-1.1, 0.9, 2.4, -0.3], [1.45, -3.5, 4.4, 0.18]),
+    routePlan([-2.2, 3.0, 2.5, 0.4], [0.6, 0.65, 4.6, -0.12], [2.0, -2.75, 2.5, -0.3], [-1.6, -1.4, 2.0, 1.35]),
+    routePlan([0.5, 3.85, 4.2, 0], [-1.8, 0.8, 2.4, 0.22], [1.3, -3.2, 3.8, -0.24]),
+    routePlan([-1.0, 3.2, 4.6, -0.25], [1.9, 0, 3.0, 0.18], [-1.2, -3.7, 2.5, 0.38], [0.05, -1.9, 1.7, 0]),
+    routePlan([1.8, 3.6, 2.4, -0.35], [-0.25, 0.6, 4.1, 1.43], [1.75, -2.8, 3.1, 0.23]),
+    routePlan([-2.4, 3.55, 2.8, 0.2], [1.0, 0.4, 2.8, -0.22]),
+    routePlan([0, 3.45, 3.4, 0.27], [-2.0, 0.25, 2.6, -0.18], [1.8, -3.65, 3.0, 0.3]),
+    routePlan([-1.65, 3.9, 4.0, -0.1], [1.7, 0.4, 2.7, 0.4], [-2.0, -3.0, 2.8, -0.25], [0.1, -1.8, 2.3, 1.48]),
+    routePlan([2.2, 3.25, 3.6, -0.24], [-0.6, 0.9, 4.0, 0.06], [1.0, -3.2, 2.6, -0.42])
+  ],
+  [
+    routePlan([-1.4, 3.6, 4.3, -0.18], [1.9, 0.8, 2.7, 0.3], [-0.8, -2.7, 3.9, -0.1], [0.2, -0.9, 1.6, 0]),
+    routePlan([0.8, 3.25, 2.4, 0.4], [-1.9, 0.9, 4.1, -0.18], [1.7, -3.4, 3.6, 0.1], [1.1, -1.6, 2.4, 1.4]),
+    routePlan([-2.1, 3.8, 3.2, -0.08], [0.55, 0.25, 2.9, 1.48], [1.7, -3.6, 4.0, -0.26]),
+    routePlan([1.6, 3.5, 4.5, 0.08], [-0.9, 0.55, 2.6, -0.45], [-1.6, -3.2, 3.1, 0.2]),
+    routePlan([-0.5, 3.7, 3.1, -0.3], [2.1, 0.6, 3.4, 0.16], [-1.9, -3.55, 4.4, -0.08]),
+    routePlan([2.1, 3.85, 2.3, 0.22], [-0.4, 0.35, 4.7, -0.1]),
+    routePlan([-1.9, 3.4, 4.2, 0.12], [0.9, 0.15, 2.3, -0.36], [2.0, -3.6, 3.5, 0.25], [-0.8, 1.9, 2.1, 1.5]),
+    routePlan([0.4, 3.75, 4.4, -0.04], [-2.3, 0.7, 2.5, 0.28], [1.8, -3.25, 3.0, -0.34], [-2.0, -1.2, 1.8, 0])
+  ]
+];
 
 const lateBoard = (chapter, slot) => {
-  const layout = lateLayouts[slot];
+  const layoutIndex = (slot * 3 + (chapter - 5) * 2) % lateLayouts.length;
+  const layout = lateLayouts[layoutIndex];
   const direction = slot % 2 === 0 ? 1 : -1;
   const start = [layout.start[0] * direction, layout.start[1] + (chapter - 5) * 0.035];
   const cupX = layout.cupX * direction;
@@ -240,12 +294,12 @@ const lateBoard = (chapter, slot) => {
         damping: 0.68
       })
     : cross(secondLayout[0] * direction, secondLayout[1], secondLayout[2]);
-  const routeBars = layout.bars.map(item => mirrorBar(item, direction));
+  const routeBars = lateRoutePlans[chapter - 5][slot].map(item => mirrorBar(item, direction));
   const machines = [firstMachine, secondMachine];
   const dynamics = layout.dynamics.map(item => mirrorDynamic(item, direction));
   if (chapter >= 7) dynamics.push(dynamicBar(0.25 * direction, -1.05 + (slot % 2) * 0.55, 2.0 + (slot % 3) * 0.2, (slot % 2 ? -0.2 : 0.24) * direction, 1.1));
   const magnets = chapter >= 6
-    ? lateMagnetLayouts[slot].map((item, index) => mirrorMagnet({
+    ? lateMagnetLayouts[layoutIndex].map((item, index) => mirrorMagnet({
         ...item,
         pull: chapter === 7 && index === 1 ? -item.pull : item.pull,
         strength: item.strength + (chapter === 8 ? 1.2 : 0)
@@ -1579,6 +1633,7 @@ window.__gameDebug = {
     return this.getState();
   },
   getState() {
+    const currentBoard = levels[currentLevelIndex];
     return {
       running,
       finished,
@@ -1589,6 +1644,9 @@ window.__gameDebug = {
       levelName: levels[currentLevelIndex].name,
       chapter: levels[currentLevelIndex].chapter ?? "基礎課程",
       goal: levels[currentLevelIndex].goal?.type ?? null,
+      blueprint: {
+        routeBars: (currentBoard.bars ?? []).map(({ x, y, length, rotation = 0 }) => [x, y, length, rotation])
+      },
       ball: ball ? { x: ball.position.x, y: ball.position.y } : null,
       magnets: magnets.map(({ x, y, pull, strength, range }) => ({ x, y, pull, strength, range })),
       bodies: dynamicBodies.concat(strokes).map(body => ({

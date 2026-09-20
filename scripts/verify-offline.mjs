@@ -26,7 +26,11 @@ const lateBlock = source.match(/const lateExpansionBoards = \[([\s\S]*?)\n\];/)?
 const lateChapterSizes = [...lateBlock.matchAll(/Array\.from\(\{ length: (\d+) \}/g)].map(([, size]) => Number(size));
 assert.deepEqual(lateChapterSizes, [10, 10, 10, 8], "the late campaign adds 38 boards in four chapters");
 const layoutBlock = source.match(/const lateLayouts = \[([\s\S]*?)\n\];/)?.[1] ?? "";
-assert.equal([...layoutBlock.matchAll(/\{ start:/g)].length, 10, "late levels use ten distinct authored layout families");
+assert.equal([...layoutBlock.matchAll(/\{ start:/g)].length, 10, "late levels use ten authored mechanical seed layouts");
+const routePlanBlock = source.match(/const lateRoutePlans = \[([\s\S]*?)\n\];/)?.[1] ?? "";
+assert.equal([...routePlanBlock.matchAll(/routePlan\(/g)].length, 38, "every late level has a separately authored route skeleton");
+assert.match(source, /lateRoutePlans\[chapter - 5\]\[slot\]/, "late boards receive their own route plan");
+assert.match(source, /const layoutIndex = \(slot \* 3 \+ \(chapter - 5\) \* 2\) % lateLayouts\.length/, "mechanical seed layouts are reordered between chapters");
 assert.match(source, /expansionBoards\.push\(\.\.\.lateExpansionBoards\)/, "late board recipes are included in the campaign");
 const goalTypes = new Set([...source.matchAll(/type: "(ballBox|target|wall|strokeBox|spinGear|ground|checkpoints)"/g)].map(([, type]) => type));
 assert.equal(goalTypes.size, 7, "the game supports seven distinct goal types");
