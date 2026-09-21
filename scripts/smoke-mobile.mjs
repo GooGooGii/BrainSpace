@@ -279,7 +279,7 @@ try {
   assert.equal(scenes.distinctLateRoutes, 88, "all 88 advanced levels use distinct rail layouts");
   assert.equal(scenes.distinctExpertMechanics, 50, "levels 101-150 use distinct machine, support, and magnet configurations");
   assert.equal(scenes.expertGoalTypes, 7, "levels 101-150 exercise every gameplay goal type");
-  assert.deepEqual(scenes.routeComplexities, [2, 3, 4], "late routes vary between two, three, and four rails");
+  assert.deepEqual(scenes.routeComplexities, [2, 3, 4, 5], "late routes vary between two and five rails after remote cup entry ramps are included");
   assert.ok(scenes.verticalRouteRails >= 8, "some late routes use vertical gates, not only shallow ramps");
   assert.ok(scenes.lateRoutesInsideWorld, "late-game route rails remain within the playable board");
   assert.equal(scenes.playabilityIssueCount, 0, `all levels pass the structural playability audit: ${JSON.stringify(scenes.playabilityIssues)}`);
@@ -313,6 +313,62 @@ try {
     return { checked: 150, failures };
   })()`);
   assert.deepEqual(allLevelGoalRegression, { checked: 150, failures: [] }, `every level can register its declared win condition: ${JSON.stringify(allLevelGoalRegression)}`);
+
+  const passiveWinAudit = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const wins = [];
+    for (let index = 24; index < 150; index++) {
+      debug.loadLevel(index);
+      const before = debug.getState();
+      if (!before.ball || before.goal === 'strokeBox' || before.goal === 'spinGear') continue;
+      const after = debug.advancePhysics(960);
+      if (after.finished) wins.push({ level: index + 1, name: before.levelName, goal: before.goal });
+    }
+    return { checkedFrom: 25, checkedThrough: 150, wins };
+  })()`);
+  assert.deepEqual(passiveWinAudit.wins, [], `levels 25-150 cannot complete from gravity and machines alone: ${JSON.stringify(passiveWinAudit.wins)}`);
+
+  const laterChallengeAudit = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const issues = [];
+    const duplicates = [];
+    const seenBlueprints = new Map();
+    let strokeCupCount = 0;
+    let levelTwentyFour = null;
+    for (let index = 23; index < 150; index++) {
+      debug.loadLevel(index);
+      const state = debug.getState();
+      const board = state.blueprint;
+      const signature = JSON.stringify(board);
+      if (seenBlueprints.has(signature)) duplicates.push([seenBlueprints.get(signature), index + 1]);
+      else seenBlueprints.set(signature, index + 1);
+      if (board.goal.type === 'strokeBox') {
+        strokeCupCount++;
+        const hasRemoteDrawRestriction = board.noDraw.some(zone => zone.h >= 13 && zone.w >= 1.8);
+        const interactionCount = board.routeBars.length + board.obstacles.length + board.dynamics.length + board.magnets.length;
+        if (!hasRemoteDrawRestriction) issues.push((index + 1) + ':direct-drop-lane-remains-open');
+        if (interactionCount < 2) issues.push((index + 1) + ':stroke-cup-has-fewer-than-two-route-elements');
+      }
+      if (index === 23) {
+        levelTwentyFour = {
+          name: state.levelName,
+          hint: document.querySelector('#hintBody')?.textContent?.trim(),
+          routeElements: board.routeBars.length + board.obstacles.length + board.dynamics.length + board.magnets.length,
+          remoteZoneHeight: Math.max(...board.noDraw.map(zone => zone.h))
+        };
+      }
+    }
+    return { checked: 127, distinctBlueprints: seenBlueprints.size, duplicates, strokeCupCount, issues, levelTwentyFour };
+  })()`);
+  assert.equal(laterChallengeAudit.distinctBlueprints, 127, `levels 24-150 have no exactly repeated board blueprints: ${JSON.stringify(laterChallengeAudit.duplicates)}`);
+  assert.equal(laterChallengeAudit.strokeCupCount, 17, "all 17 later hand-drawn-object cup levels are covered by the challenge audit");
+  assert.deepEqual(laterChallengeAudit.issues, [], `later hand-drawn-object cup levels block the old straight-drop solution: ${JSON.stringify(laterChallengeAudit.issues)}`);
+  assert.deepEqual(laterChallengeAudit.levelTwentyFour, {
+    name: "禁區接力",
+    hint: "右側整條紅色區都不能下筆。先在左側畫偏心物件，讓它沿兩道斜坡翻轉進杯。",
+    routeElements: 2,
+    remoteZoneHeight: 13.5
+  }, `level 24 is a two-stage remote-drawing puzzle: ${JSON.stringify(laterChallengeAudit.levelTwentyFour)}`);
 
   const legacyProgressRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
@@ -530,7 +586,7 @@ try {
   assert.equal(play.bodyPoints, 256, "long touch gestures are resampled to the mobile-safe physics limit");
   assert.ok(play.physicalLength > 40, `the retained physical path is substantially longer than the old minimum-length ceiling: ${JSON.stringify(play)}`);
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount, longStrokeBodyPoints: play.bodyPoints, longStrokeLength: play.physicalLength }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, passiveWinAudit, laterChallengeAudit, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount, longStrokeBodyPoints: play.bodyPoints, longStrokeLength: play.physicalLength }));
   socket.close();
 } finally {
   browser.kill();

@@ -82,7 +82,7 @@ let checkpointMarkers = [];
 
 const expansionChapters = [
   { title: "重力與落點", names: ["第一道斜坡", "下坡撞靶", "左牆折返", "杯口外投放", "落點窄門", "跨越高牆", "雙層導軌", "右牆回彈", "雙靶接力", "繞過石柱"] },
-  { title: "重心與路線", names: ["偏心推球", "禁區投杯", "兩段接力", "窄帶落點", "借牆入靶", "高低雙台", "柱間穿梭", "反向投放", "三點連線", "最後一個支點"] },
+  { title: "重心與路線", names: ["偏心推球", "禁區接力", "兩段接力", "窄帶落點", "借牆入靶", "高低雙台", "柱間穿梭", "反向投放", "三點連線", "最後一個支點"] },
   { title: "齒輪初體驗", names: ["撞醒大齒輪", "外緣施力", "固定輪與活輪", "順時針推進", "輪後藏靶", "雙輪接力", "轉輪投杯", "齒間落球", "三種輪速", "重錘傳動"] },
   { title: "節奏與變速", names: ["慢輪入口", "變速撞靶", "牆面折返", "順逆雙輪", "抓反轉時機", "快慢兩層", "動輪窄門", "輪間投杯", "三靶計時", "變速長廊"] },
   { title: "機關組合試煉", names: ["四輪迷陣", "雙靶狙擊", "極限反彈", "禁區空投", "啟動再接球", "逆流長廊", "偏心密室", "機關靶場", "五段接力", "最後一轉"] },
@@ -103,11 +103,30 @@ const cupAt = (x, y = -5.55, w = 1.45, h = 1.15) => [x - w / 2, x + w / 2, y - h
 const boxBoard = (ball, cupX, cupY = -5.55, extra = {}) => ({ ...extra, ball, basket: cupAt(cupX, cupY), goal: { type: "ballBox" } });
 const targetBoard = (ball, x, y, extra = {}) => ({ ...extra, ball, goal: { type: "target", x, y, r: 0.58 } });
 const wallBoard = (ball, side, minY, maxY, extra = {}) => ({ ...extra, ball, goal: { type: "wall", side, minY, maxY } });
-const strokeCupBoard = (cupX, cupY, extra = {}) => ({ ...extra, basket: cupAt(cupX, cupY, 1.6, 1.2), goal: { type: "strokeBox" }, noDraw: [{ x: cupX, y: cupY + 1.0, w: 2.1, h: 2.4 }, ...(extra.noDraw ?? [])] });
+const strokeCupBoard = (cupX, cupY, extra = {}) => {
+  const { forceRemote = false, bars = [], noDraw = [], ...rest } = extra;
+  const direction = cupX >= 0 ? 1 : -1;
+  const restrictedZone = forceRemote
+    ? { x: cupX, y: 0, w: 2.0, h: 13.5 }
+    : { x: cupX, y: cupY + 1.0, w: 2.1, h: 2.4 };
+  const entryRamp = barSpec(cupX - direction * 1.45, cupY + 1.55, 2.7, -direction * 0.34);
+  return {
+    ...rest,
+    bars: forceRemote ? [...bars, entryRamp] : bars,
+    basket: cupAt(cupX, cupY, 1.6, 1.2),
+    goal: { type: "strokeBox" },
+    noDraw: [restrictedZone, ...noDraw]
+  };
+};
 const groundBoard = (ball, minX, maxX, extra = {}) => ({ ...extra, ball, goal: { type: "ground", minX, maxX } });
 const routeBoard = (ball, targets, extra = {}) => ({ ...extra, ball, goal: { type: "checkpoints", targets: targets.map(([x, y, r = 0.5]) => ({ x, y, r })) } });
 const spinBoard = (gear, speed, extra = {}) => ({ ...extra, goal: { type: "spinGear", speed }, obstacles: [gear, ...(extra.obstacles ?? [])] });
 const dynamicBar = (x, y, length, rotation = 0, mass = 1) => ({ x, y, length, rotation, mass });
+const oppositeGroundRange = (startX, width, variant = 0) => {
+  const direction = startX < 0 ? 1 : -1;
+  const center = direction * (2.1 + variant % 3 * 0.3);
+  return [center - width / 2, center + width / 2];
+};
 
 // Authored board recipes: each entry changes the start, route, landing zone, or
 // machine layout. Mechanics are introduced, then recombined in later chapters.
@@ -126,14 +145,19 @@ const expansionBoards = [
   ],
   [
     boxBoard([-3.3, 5.25], 3.25, -5.45, { bars: [barSpec(0, -0.9, 4.2, 0.12)], obstacles: [cross(1.35, -3.0, 0.58)] }),
-    strokeCupBoard(3.2, -5.5, { bars: [barSpec(-0.2, 0.1, 4.0, -0.22)] }),
+    strokeCupBoard(3.2, -5.5, {
+      forceRemote: true,
+      bars: [barSpec(-0.2, 0.1, 4.0, -0.22)],
+      hintTitle: "從左側接力",
+      hint: "右側整條紅色區都不能下筆。先在左側畫偏心物件，讓它沿兩道斜坡翻轉進杯。"
+    }),
     routeBoard([3.2, 5.25], [[1.3, 1.0], [-1.6, -1.6], [-3.2, -4.65]], { bars: [barSpec(0.3, 3.05, 4.1, 0), barSpec(-0.25, -0.2, 4.6, 0.1)] }),
     groundBoard([-3.2, 5.35], 1.15, 2.0, { bars: [barSpec(0.0, 0.7, 4.2, -0.16)], obstacles: [cross(2.7, -2.0, 0.62)] }),
     targetBoard([-3.25, 5.2], 3.2, -5.0, { bars: [barSpec(-0.1, 2.8, 4.5, 0), barSpec(0.2, -1.1, 4.8, -0.18)] }),
     wallBoard([3.1, 5.25], "left", -5.2, -3.3, { obstacles: [cross(-0.4, 0.2, 0.72)], bars: [barSpec(-0.2, -2.1, 4.0, 0.12)] }),
     boxBoard([-3.25, 5.4], 3.15, -3.9, { obstacles: [cross(-1.5, 1.5, 0.65), cross(1.5, -1.4, 0.65)], bars: [barSpec(0, -4.8, 3.3, 0)] }),
     targetBoard([3.15, 5.2], -3.2, 1.5, { obstacles: [cross(-1.15, -1.5, 0.7)], bars: [barSpec(0.15, 2.4, 4.1, 0.12), barSpec(0, -3.8, 4.5, -0.12)] }),
-    strokeCupBoard(-3.2, -5.5, { bars: [barSpec(0.2, -2.0, 4.6, 0.18)], noDraw: [{ x: 1.9, y: -3.0, w: 1.4, h: 2.0 }] }),
+    strokeCupBoard(-3.2, -5.5, { forceRemote: true, bars: [barSpec(0.2, -2.0, 4.6, 0.18)], noDraw: [{ x: 1.9, y: -3.0, w: 1.4, h: 2.0 }] }),
     boxBoard([3.25, 5.35], -3.2, -5.45, { obstacles: [cross(-1.3, 2.0, 0.6), cross(1.4, -0.5, 0.7)], bars: [barSpec(0, -3.4, 3.6, 0.18)] })
   ],
   [
@@ -141,7 +165,7 @@ const expansionBoards = [
     spinBoard(cross(0.3, -0.6, 0.8, "impact", { damping: 0.65 }), 0.58),
     boxBoard([3.2, 5.3], -3.2, -5.45, { obstacles: [cross(-1.3, 0.6, 0.65), wheel(1.2, -1.9, 0.72, "constant", -0.78)] }),
     targetBoard([-3.3, 5.4], 3.1, -3.7, { obstacles: [wheel(0.2, 1.4, 0.78, "constant", 0.85)], bars: [barSpec(0, -2.0, 4.8, -0.15)] }),
-    strokeCupBoard(3.15, -5.45, { obstacles: [cross(-0.5, 0.2, 0.74, "fixed"), wheel(1.1, -2.0, 0.72, "impact", 0, { damping: 0.75 })] }),
+    strokeCupBoard(3.15, -5.45, { forceRemote: true, obstacles: [cross(-0.5, 0.2, 0.74, "fixed"), wheel(1.1, -2.0, 0.72, "impact", 0, { damping: 0.75 })] }),
     spinBoard(wheel(-0.2, 0.8, 0.84, "impact", 0, { damping: 0.6 }), 0.72, { obstacles: [cross(2.3, -2.0, 0.62)] }),
     boxBoard([-3.2, 5.25], 3.2, -5.4, { obstacles: [wheel(-1.4, 1.2, 0.72, "constant", -0.9), wheel(1.4, -1.5, 0.72, "impact", 0, { damping: 0.7 })], bars: [barSpec(0, -3.5, 3.8, 0.12)] }),
     groundBoard([3.2, 5.3], -0.65, 0.65, { obstacles: [cross(-1.2, -0.8, 0.66), wheel(1.3, 1.4, 0.78, "constant", 0.9)] }),
@@ -156,7 +180,7 @@ const expansionBoards = [
     routeBoard([-3.2, 5.3], [[0, 2.7], [2.8, -3.5]], { obstacles: [wheel(0, 0.2, 0.82, "variable", 0, { baseSpeed: -0.15, amplitude: 1.15, frequency: 1.25 })], bars: [barSpec(-1.5, -2.2, 3.2, 0.2)] }),
     groundBoard([3.2, 5.25], -0.9, 0.9, { obstacles: [wheel(-1.7, 1.7, 0.72, "variable", 0, { baseSpeed: 0.1, amplitude: 0.9, frequency: 0.75 }), wheel(1.6, -1.2, 0.76, "constant", -0.85)], bars: [barSpec(0, -3.8, 4.2, 0)] }),
     targetBoard([-3.2, 5.4], 3.15, -4.8, { obstacles: [wheel(-1.7, 1.3, 0.76, "variable", 0, { baseSpeed: -0.1, amplitude: 1.0, frequency: 1.1 }), cross(1.3, -1.5, 0.67)], bars: [barSpec(0.1, 3.2, 4.3, 0)] }),
-    strokeCupBoard(-3.2, -5.45, { obstacles: [wheel(0, 0.5, 0.8, "constant", 0.95), cross(2.0, -2.6, 0.62)], bars: [barSpec(-1.0, -2.0, 3.6, 0.18)] }),
+    strokeCupBoard(-3.2, -5.45, { forceRemote: true, obstacles: [wheel(0, 0.5, 0.8, "constant", 0.95), cross(2.0, -2.6, 0.62)], bars: [barSpec(-1.0, -2.0, 3.6, 0.18)] }),
     routeBoard([3.2, 5.4], [[1.3, 1.7], [-1.6, -1.0], [-3.2, -4.9]], { obstacles: [wheel(-1.6, 1.7, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.05, frequency: 1.3 }), wheel(1.4, -1.9, 0.72, "constant", -0.95)], bars: [barSpec(0, 3.4, 4.2, 0)] }),
     boxBoard([-3.2, 5.3], 3.2, -5.4, { obstacles: [wheel(-1.8, 2.2, 0.72, "variable", 0, { baseSpeed: 0.12, amplitude: 1.05, frequency: 1.0 }), wheel(0.1, -0.1, 0.82, "constant", -1.0), wheel(1.8, -3.0, 0.72, "variable", 0, { baseSpeed: -0.08, amplitude: 0.95, frequency: 1.4 })], bars: [barSpec(-0.5, -4.1, 3.1, 0.2)] })
   ],
@@ -164,7 +188,7 @@ const expansionBoards = [
     routeBoard([-3.2, 5.4], [[-2.0, 2.1], [0.5, -0.5], [3.15, -4.7]], { obstacles: [wheel(-1.4, 2.1, 0.72, "variable", 0, { baseSpeed: 0.1, amplitude: 1.0, frequency: 1.1 }), wheel(1.2, -1.2, 0.78, "constant", -1.0)], bars: [barSpec(0, 3.5, 4.4, 0), barSpec(-0.1, -3.1, 4.3, 0.12)] }),
     targetBoard([3.2, 5.3], -3.15, -4.8, { obstacles: [cross(-1.4, 1.0, 0.64), wheel(0.5, -0.8, 0.8, "variable", 0, { baseSpeed: 0, amplitude: 1.2, frequency: 1.15 }), cross(1.8, -3.0, 0.6)], bars: [barSpec(0.1, 2.8, 4.0, -0.1)] }),
     wallBoard([-3.2, 5.35], "right", -5.5, -2.6, { obstacles: [wheel(-1.7, 1.7, 0.72, "constant", 1.0), cross(0.1, -0.2, 0.68), wheel(1.6, -2.3, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.1, frequency: 1.3 })] }),
-    strokeCupBoard(3.2, -5.4, { obstacles: [wheel(-1.2, 1.4, 0.76, "variable", 0, { baseSpeed: 0.1, amplitude: 1.0, frequency: 0.9 }), cross(1.0, -1.3, 0.68), wheel(1.8, -3.1, 0.72, "constant", -0.9)], bars: [barSpec(0, 0.3, 4.8, 0.15)] }),
+    strokeCupBoard(3.2, -5.4, { forceRemote: true, obstacles: [wheel(-1.2, 1.4, 0.76, "variable", 0, { baseSpeed: 0.1, amplitude: 1.0, frequency: 0.9 }), cross(1.0, -1.3, 0.68), wheel(1.8, -3.1, 0.72, "constant", -0.9)], bars: [barSpec(0, 0.3, 4.8, 0.15)] }),
     spinBoard(wheel(0.2, 0.2, 0.84, "impact", 0, { damping: 0.55 }), 0.78, { obstacles: [wheel(-2.0, 2.3, 0.68, "variable", 0, { baseSpeed: 0, amplitude: 0.9, frequency: 1.1 }), cross(2.1, -2.4, 0.62)] }),
     groundBoard([3.2, 5.3], -0.7, 0.7, { obstacles: [wheel(-1.6, 1.8, 0.72, "variable", 0, { baseSpeed: -0.1, amplitude: 1.1, frequency: 1.0 }), wheel(0.4, -0.4, 0.8, "constant", 1.0), cross(2.0, -3.1, 0.62)], bars: [barSpec(-0.2, -4.7, 3.2, 0)] }),
     boxBoard([-3.2, 5.4], 3.2, -5.4, { obstacles: [wheel(-1.6, 1.8, 0.72, "constant", -0.95), wheel(0.5, 0.0, 0.78, "impact", 0, { damping: 0.65 }), wheel(1.7, -2.4, 0.72, "variable", 0, { baseSpeed: 0, amplitude: 1.0, frequency: 1.2 })], bars: [barSpec(-0.1, 3.5, 4.2, 0)] }),
@@ -389,12 +413,15 @@ const lateBoard = (chapter, slot) => {
   const kind = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"][(chapter * 2 + slot) % 7];
   const targetPoint = [layout.target[0] * direction, layout.target[1] + (chapter - 5) * 0.08];
   const wallRange = layout.wall;
-  const groundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const layoutGroundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const groundRange = chapter === 5 && slot === 8
+    ? oppositeGroundRange(start[0], Math.abs(layout.ground[1] - layout.ground[0]), slot)
+    : layoutGroundRange;
   const checkpoints = layout.checkpoints.map(([x, y, r]) => [x * direction, y + (chapter - 5) * 0.06, r]);
   if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, shared);
   if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], shared);
   if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", wallRange[0], wallRange[1], shared);
-  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
+  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, forceRemote: true, noDraw: [{ x: 0.4 * direction, y: -3.0, w: 1.4 + (slot % 3) * 0.3, h: 2.0 }] });
   if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], shared);
   if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75]], shared);
   return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.55 + (slot % 3) * 0.08 }), 0.66 + chapter * 0.025, shared);
@@ -449,13 +476,19 @@ const expertBoard = (chapter, slot) => {
   const kinds = ["ballBox", "target", "wall", "strokeBox", "ground", "checkpoints", "spinGear"];
   const kind = kinds[(slot * 3 + phase * 2) % kinds.length];
   const targetPoint = [layout.target[0] * direction, layout.target[1] + phase * 0.05];
-  const groundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const layoutGroundRange = [layout.ground[0] * direction, layout.ground[1] * direction].sort((a, b) => a - b);
+  const needsPassiveWinFix = (phase === 0 && slot === 6)
+    || (phase === 1 && slot === 3)
+    || (phase === 3 && slot === 4);
+  const groundRange = needsPassiveWinFix
+    ? oppositeGroundRange(start[0], Math.abs(layout.ground[1] - layout.ground[0]), slot + phase)
+    : layoutGroundRange;
   const checkpoints = layout.checkpoints.map(([x, y, r]) => [x * direction, y + phase * 0.04, r]);
   if (phase >= 2) checkpoints.push([0.15 * direction, -3.55 + (slot % 2) * 0.35, 0.46]);
   if (kind === "ballBox") return boxBoard(start, cupX, layout.cupY, shared);
   if (kind === "target") return targetBoard(start, targetPoint[0], targetPoint[1], shared);
   if (kind === "wall") return wallBoard(start, direction > 0 ? "right" : "left", layout.wall[0], layout.wall[1], shared);
-  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, noDraw: [{ x: -1.1 * direction, y: -1.6, w: 1.3 + (slot % 2) * 0.35, h: 1.8 }] });
+  if (kind === "strokeBox") return strokeCupBoard(cupX, layout.cupY, { ...shared, forceRemote: true, noDraw: [{ x: -1.1 * direction, y: -1.6, w: 1.3 + (slot % 2) * 0.35, h: 1.8 }] });
   if (kind === "ground") return groundBoard(start, groundRange[0], groundRange[1], shared);
   if (kind === "checkpoints") return routeBoard(start, [...checkpoints, [cupX, -4.75, 0.48]], shared);
   return spinBoard(wheel(layout.spin[0] * direction, layout.spin[1], layout.spin[2], "impact", 0, { damping: 0.5 + (slot % 4) * 0.07 }), 0.68 + phase * 0.035 + (slot % 3) * 0.025, shared);
