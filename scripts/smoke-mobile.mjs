@@ -343,6 +343,24 @@ try {
     finished: true
   }, `level 8 states only the enforced goal while keeping the turntable as an optional hint: ${JSON.stringify(openEndedLevelRegression)}`);
 
+  const levelElevenPassiveWinRegression = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    debug.loadLevel(10);
+    const before = debug.getState();
+    const after = debug.advancePhysics(1200);
+    return {
+      mission: document.querySelector('#missionText')?.textContent?.trim(),
+      startX: before.ball.x,
+      basketCenterX: (before.blueprint.basket[0] + before.blueprint.basket[1]) / 2,
+      finished: after.finished,
+      strokes: after.strokes
+    };
+  })()`);
+  assert.equal(levelElevenPassiveWinRegression.mission, "把球送進右下方橙色盒子", "level 11 clearly names the relocated goal");
+  assert.ok(Math.abs(levelElevenPassiveWinRegression.startX - levelElevenPassiveWinRegression.basketCenterX) > 4, "level 11 starts the ball away from the cup's gravity-only path");
+  assert.equal(levelElevenPassiveWinRegression.finished, false, `level 11 cannot complete after ten seconds without drawing: ${JSON.stringify(levelElevenPassiveWinRegression)}`);
+  assert.equal(levelElevenPassiveWinRegression.strokes, 0, "the passive-win check does not add a hidden stroke");
+
   const dynamicPlay = await evaluatePage(`(() => {
     const card = document.querySelector('.level-card[data-level="62"]');
     card.click();
@@ -494,7 +512,7 @@ try {
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
   socket.close();
 } finally {
   browser.kill();
