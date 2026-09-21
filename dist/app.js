@@ -26,7 +26,8 @@ const LINE_RADIUS = 0.075;
 const LINE_DENSITY = 0.85;
 const FIXED_STEP = 1 / 120;
 const MAX_PHYSICS_SPEED = 18;
-const MAX_STROKE_POINTS = 192;
+const MAX_STROKE_POINTS = 512;
+const MAX_BODY_POINTS = 256;
 const COLLISION_CELL_SIZE = 0.75;
 let maxStrokes = 3;
 const GRAVITY = 5.5;
@@ -824,6 +825,43 @@ function moveStroke(event) {
   if (currentStroke.points.length >= MAX_STROKE_POINTS) instructionEl.textContent = "已達單筆線條上限，放開即可開始模擬";
 }
 
+function resampleStrokePoints(points, maxPoints) {
+  if (points.length <= maxPoints) return points;
+  const cumulative = [0];
+  for (let index = 1; index < points.length; index++) {
+    cumulative.push(cumulative[index - 1] + points[index].distanceTo(points[index - 1]));
+  }
+  const totalLength = cumulative.at(-1);
+  if (totalLength < 0.0001) return [points[0], points.at(-1)];
+  const resampled = [points[0].clone()];
+  let segmentIndex = 1;
+  for (let sampleIndex = 1; sampleIndex < maxPoints - 1; sampleIndex++) {
+    const targetLength = totalLength * sampleIndex / (maxPoints - 1);
+    while (segmentIndex < cumulative.length - 1 && cumulative[segmentIndex] < targetLength) segmentIndex++;
+    const segmentStartLength = cumulative[segmentIndex - 1];
+    const segmentLength = cumulative[segmentIndex] - segmentStartLength;
+    const progress = segmentLength > 0 ? (targetLength - segmentStartLength) / segmentLength : 0;
+    resampled.push(points[segmentIndex - 1].clone().lerp(points[segmentIndex], progress));
+  }
+  resampled.push(points.at(-1).clone());
+  return resampled;
+}
+
+function prepareStrokeForPhysics(stroke) {
+  const points = resampleStrokePoints(stroke.points, MAX_BODY_POINTS);
+  if (points === stroke.points) return stroke;
+  stroke.meshes.forEach(mesh => {
+    drawingRoot.remove(mesh);
+    mesh.geometry.dispose();
+  });
+  const meshes = [];
+  for (let index = 1; index < points.length; index++) {
+    const mesh = addStrokeSegment(points[index - 1], points[index]);
+    if (mesh) meshes.push(mesh);
+  }
+  return { points, meshes };
+}
+
 function makeStrokeBody(stroke) {
   let totalLength = 0;
   const weightedCenter = new THREE.Vector2();
@@ -913,7 +951,7 @@ function endStroke(event) {
   if (event.pointerId !== activePointerId) return;
   event.preventDefault();
   if (currentStroke && currentStroke.points.length > 1) {
-    strokes.push(makeStrokeBody(currentStroke));
+    strokes.push(makeStrokeBody(prepareStrokeForPhysics(currentStroke)));
     if (!running) startDrop();
     checkGoal();
   } else {
@@ -1227,7 +1265,7 @@ function collideMovingBodies(bodies) {
           candidate = { bodyAIndex, bodyBIndex, segmentPairs: [], seen: new Set() };
           candidates.set(bodyPairKey, candidate);
         }
-        const segmentPairKey = segmentAIndex * MAX_STROKE_POINTS + segmentBIndex;
+        const segmentPairKey = segmentAIndex * MAX_BODY_POINTS + segmentBIndex;
         if (candidate.seen.has(segmentPairKey)) continue;
         candidate.seen.add(segmentPairKey);
         candidate.segmentPairs.push([segmentAIndex, segmentBIndex]);
@@ -1764,7 +1802,7 @@ window.__gameDebug = {
       const mesh = addStrokeSegment(worldPoints[index - 1], worldPoints[index]);
       if (mesh) meshes.push(mesh);
     }
-    const body = makeStrokeBody({ points: worldPoints, meshes });
+    const body = makeStrokeBody(prepareStrokeForPhysics({ points: worldPoints, meshes }));
     body.velocity.set(velocity[0] ?? 0, velocity[1] ?? 0);
     strokes.push(body);
     updateControls();

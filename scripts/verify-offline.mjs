@@ -59,7 +59,9 @@ assert.match(source, /gearSegmentsCache\.forEach/, "cached gear segments are reu
 assert.match(source, /const FIXED_STEP = 1 \/ 120/, "the physics clock uses a fixed 120 Hz step");
 assert.match(source, /function physicsSubstep\(dt\) \{\s*updateGears\(dt\)/, "gear movement advances in the fixed physics clock");
 assert.match(source, /const substeps = Math\.min\(4, Math\.max\(1, Math\.ceil\(fastest \* dt \/ LINE_RADIUS\)\)\)/, "fast motion receives adaptive collision substeps");
-assert.match(source, /MAX_STROKE_POINTS = 192/, "drawn lines have a bounded point count for mobile performance");
+assert.match(source, /MAX_STROKE_POINTS = 512/, "touch gestures can keep 512 points for substantially longer hand-drawn objects");
+assert.match(source, /MAX_BODY_POINTS = 256/, "long gestures are resampled to a mobile-safe physics body size");
+assert.match(source, /function prepareStrokeForPhysics\(stroke\)/, "long gestures retain their full route while bounding collision complexity");
 assert.match(source, /pixelRatioLimit = rect\.width < 600 \? 1\.5 : 2/, "mobile rendering uses an adaptive pixel ratio");
 assert.match(source, /parStrokes: Math\.max\(1, strokesAllowed - 1\)/, "the third-star stroke threshold requires a better-than-maximum solution");
 assert.match(source, /const rimSegments = 40/, "ring gears have physical rim collision segments");

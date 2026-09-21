@@ -501,18 +501,36 @@ try {
       pointerId: 7, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true,
       clientX: rect.left + rect.width * x, clientY: rect.top + rect.height * y, buttons
     }));
-    emit('pointerdown', 0.25, 0.28, 1);
-    emit('pointermove', 0.38, 0.34, 1);
-    emit('pointermove', 0.50, 0.30, 1);
-    emit('pointerup', 0.50, 0.30, 0);
-    return { canvasWidth: rect.width, canvasHeight: rect.height };
+    const samples = 300;
+    const pointAt = index => {
+      const angle = index * 0.08;
+      return [0.5 + Math.cos(angle) * 0.26, 0.46 + Math.sin(angle) * 0.18];
+    };
+    const [startX, startY] = pointAt(0);
+    emit('pointerdown', startX, startY, 1);
+    for (let index = 1; index <= samples; index++) {
+      const [x, y] = pointAt(index);
+      emit('pointermove', x, y, 1);
+    }
+    const instructionBeforeRelease = document.querySelector('#instruction')?.textContent?.trim();
+    const [endX, endY] = pointAt(samples);
+    emit('pointerup', endX, endY, 0);
+    const points = window.__gameDebug.getState().bodies.at(-1).points;
+    const physicalLength = points.slice(1).reduce((sum, point, index) => {
+      const previous = points[index];
+      return sum + Math.hypot(point.x - previous.x, point.y - previous.y);
+    }, 0);
+    return { canvasWidth: rect.width, canvasHeight: rect.height, instructionBeforeRelease, bodyPoints: points.length, physicalLength };
   })()`);
   await delay(150);
   const strokeCount = await evaluatePage("document.querySelector('#strokeCount').textContent.trim()");
   assert.ok(play.canvasWidth > 0 && play.canvasHeight > 0, "the game canvas is visible");
   assert.equal(strokeCount, "1 / 1", "touch drawing creates a physics object");
+  assert.ok(!play.instructionBeforeRelease.includes("上限"), `a 300-sample touch gesture no longer reaches the old drawing limit: ${JSON.stringify(play)}`);
+  assert.equal(play.bodyPoints, 256, "long touch gestures are resampled to the mobile-safe physics limit");
+  assert.ok(play.physicalLength > 40, `the retained physical path is substantially longer than the old minimum-length ceiling: ${JSON.stringify(play)}`);
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount, longStrokeBodyPoints: play.bodyPoints, longStrokeLength: play.physicalLength }));
   socket.close();
 } finally {
   browser.kill();
