@@ -344,7 +344,7 @@ try {
       else seenBlueprints.set(signature, index + 1);
       if (board.goal.type === 'strokeBox') {
         strokeCupCount++;
-        const hasRemoteDrawRestriction = board.noDraw.some(zone => zone.h >= 13 && zone.w >= 1.8);
+        const hasRemoteDrawRestriction = board.noDraw.some(zone => zone.fullHeight === true && zone.h >= 14 && zone.w >= 1.8);
         const interactionCount = board.routeBars.length + board.obstacles.length + board.dynamics.length + board.magnets.length;
         if (!hasRemoteDrawRestriction) issues.push((index + 1) + ':direct-drop-lane-remains-open');
         if (interactionCount < 2) issues.push((index + 1) + ':stroke-cup-has-fewer-than-two-route-elements');
@@ -367,8 +367,38 @@ try {
     name: "禁區接力",
     hint: "右側整條紅色區都不能下筆。先在左側畫偏心物件，讓它沿兩道斜坡翻轉進杯。",
     routeElements: 2,
-    remoteZoneHeight: 13.5
+    remoteZoneHeight: 14
   }, `level 24 is a two-stage remote-drawing puzzle: ${JSON.stringify(laterChallengeAudit.levelTwentyFour)}`);
+
+  const topLaneDrawingAudit = await evaluatePage(`(() => {
+    const debug = window.__gameDebug;
+    const canvas = document.querySelector('#canvasMount canvas');
+    const failures = [];
+    let checked = 0;
+    let pointerId = 200;
+    const emit = (type, x, y, buttons) => canvas.dispatchEvent(new PointerEvent(type, {
+      pointerId, pointerType: 'touch', isPrimary: true, bubbles: true, cancelable: true,
+      clientX: x, clientY: y, buttons
+    }));
+    for (let index = 23; index < 150; index++) {
+      debug.loadLevel(index);
+      const before = debug.getState();
+      if (before.goal !== 'strokeBox') continue;
+      checked++;
+      pointerId++;
+      const rect = canvas.getBoundingClientRect();
+      const cupX = (before.blueprint.basket[0] + before.blueprint.basket[1]) / 2;
+      const x = rect.left + (cupX + 5) / 10 * rect.width;
+      const y = rect.top + rect.height * 0.035;
+      emit('pointerdown', x, y, 1);
+      emit('pointermove', x + rect.width * 0.025, y + rect.height * 0.025, 1);
+      emit('pointerup', x + rect.width * 0.025, y + rect.height * 0.025, 0);
+      const after = debug.getState();
+      if (after.strokes !== 0) failures.push({ level: index + 1, strokes: after.strokes });
+    }
+    return { checked, failures };
+  })()`);
+  assert.deepEqual(topLaneDrawingAudit, { checked: 17, failures: [] }, `all later hand-drawn-object cup levels reject drawing at the visible top of the cup lane: ${JSON.stringify(topLaneDrawingAudit)}`);
 
   const legacyProgressRegression = await evaluatePage(`(() => {
     const debug = window.__gameDebug;
@@ -586,7 +616,7 @@ try {
   assert.equal(play.bodyPoints, 256, "long touch gestures are resampled to the mobile-safe physics limit");
   assert.ok(play.physicalLength > 40, `the retained physical path is substantially longer than the old minimum-length ceiling: ${JSON.stringify(play)}`);
 
-  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, passiveWinAudit, laterChallengeAudit, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount, longStrokeBodyPoints: play.bodyPoints, longStrokeLength: play.physicalLength }));
+  console.log(JSON.stringify({ viewport: "412x915", ...menu, scenesOpened: scenes.opened, distinctMissions: scenes.distinctMissions, distinctLateRoutes: scenes.distinctLateRoutes, distinctExpertMechanics: scenes.distinctExpertMechanics, expertGoalTypes: scenes.expertGoalTypes, routeComplexities: scenes.routeComplexities, verticalRouteRails: scenes.verticalRouteRails, lateRoutesInsideWorld: scenes.lateRoutesInsideWorld, playabilityIssueCount: scenes.playabilityIssueCount, goalConditionRegression, allLevelGoalRegression, passiveWinAudit, laterChallengeAudit, topLaneDrawingAudit, legacyProgressRegression, openEndedLevelRegression, levelElevenPassiveWinRegression, dynamicLevel: 63, dynamicStrokeCount: dynamicPlay.strokeCount, magnetLevel: 73, magnetStrokeCount: magnetPlay.strokeCount, finalePlay, bodyCollision: collisionRegression, segmentObstacleShift: segmentObstacleRegression, magneticTorque: magneticTorqueRegression, magnetProgression, deterministicGearFrames: gearDeterminismRegression.first.length, fourXCpuPhysicsBenchmarkLevel: 150, fourXCpuPhysicsBenchmarkMs: physicsBenchmarkMs, enteredLevel: 1, strokeCount, longStrokeBodyPoints: play.bodyPoints, longStrokeLength: play.physicalLength }));
   socket.close();
 } finally {
   browser.kill();

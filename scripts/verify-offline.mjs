@@ -67,7 +67,8 @@ assert.match(source, /parStrokes: Math\.max\(1, strokesAllowed - 1\)/, "the thir
 assert.match(source, /const rimSegments = 40/, "ring gears have physical rim collision segments");
 assert.match(source, /for \(const previousCampaignEnd of \[12, 100\]\)/, "legacy progress checks both earlier campaign endings");
 assert.match(source, /Number\(savedStars\[previousCampaignEnd - 1\]\) > 0/, "legacy progress advances only after the prior finale was cleared");
-assert.match(source, /forceRemote\s*\? \{ x: cupX, y: 0, w: 2\.0, h: 13\.5 \}/, "later hand-drawn-object cups block the direct vertical drawing lane");
+assert.match(source, /forceRemote\s*\? \{ x: cupX, y: 0, w: 2\.0, h: 14, fullHeight: true \}/, "later hand-drawn-object cups block the complete vertical drawing lane");
+assert.match(source, /const insideY = zone\.fullHeight \|\|/, "full-height forbidden lanes reject drawing beyond the normal world bounds");
 assert.match(source, /bars: forceRemote \? \[\.\.\.bars, entryRamp\] : bars/, "remote-drawing cup levels receive a final entry ramp");
 assert.match(source, /\(phase === 3 && slot === 4\)/, "all three expert passive-win ground levels receive targeted layouts");
 assert.match(source, /chapter === 5 && slot === 8/, "the late-campaign passive-win ground level receives a targeted layout");

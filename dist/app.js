@@ -107,7 +107,7 @@ const strokeCupBoard = (cupX, cupY, extra = {}) => {
   const { forceRemote = false, bars = [], noDraw = [], ...rest } = extra;
   const direction = cupX >= 0 ? 1 : -1;
   const restrictedZone = forceRemote
-    ? { x: cupX, y: 0, w: 2.0, h: 13.5 }
+    ? { x: cupX, y: 0, w: 2.0, h: 14, fullHeight: true }
     : { x: cupX, y: cupY + 1.0, w: 2.1, h: 2.4 };
   const entryRamp = barSpec(cupX - direction * 1.45, cupY + 1.55, 2.7, -direction * 0.34);
   return {
@@ -707,8 +707,9 @@ function createScene(level) {
   (level.bars ?? []).forEach(item => bar(item.x, item.y, item.length, item.thickness, item.rotation ?? 0, white, true));
   (level.dynamics ?? []).forEach(addDynamicBar);
   (level.noDraw ?? []).forEach(zone => {
-    const area = new THREE.Mesh(new THREE.PlaneGeometry(zone.w, zone.h), forbiddenRed);
-    area.position.set(zone.x, zone.y, -0.15);
+    const zoneHeight = zone.fullHeight ? 200 : zone.h;
+    const area = new THREE.Mesh(new THREE.PlaneGeometry(zone.w, zoneHeight), forbiddenRed);
+    area.position.set(zone.x, zone.fullHeight ? 0 : zone.y, -0.15);
     gameRoot.add(area);
   });
   if (basket) {
@@ -782,7 +783,9 @@ function drawPointIsClear(point) {
   if (!validPoint(point)) return false;
   if (ball && point.distanceTo(new THREE.Vector2(ball.position.x, ball.position.y)) < BALL_RADIUS + LINE_RADIUS + margin) return false;
   for (const zone of levels[currentLevelIndex].noDraw ?? []) {
-    if (Math.abs(point.x - zone.x) < zone.w / 2 + LINE_RADIUS && Math.abs(point.y - zone.y) < zone.h / 2 + LINE_RADIUS) return false;
+    const insideX = Math.abs(point.x - zone.x) < zone.w / 2 + LINE_RADIUS;
+    const insideY = zone.fullHeight || Math.abs(point.y - zone.y) < zone.h / 2 + LINE_RADIUS;
+    if (insideX && insideY) return false;
   }
   for (const obstacle of circleObstacles) {
     if (point.distanceTo(new THREE.Vector2(obstacle.x, obstacle.y)) < obstacle.r + LINE_RADIUS + margin) return false;
@@ -830,7 +833,7 @@ function beginStroke(event) {
   const point = worldPoint(event);
   if (!drawPointIsClear(point)) {
     activePointerId = null;
-    instructionEl.textContent = "不能從球、齒輪或既有線條上開始繪製";
+    instructionEl.textContent = "不能在紅色區、球、齒輪或既有線條上開始繪製";
     return;
   }
   currentStroke = { points: [point], meshes: [] };
